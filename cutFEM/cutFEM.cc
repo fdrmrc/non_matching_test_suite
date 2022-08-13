@@ -27,6 +27,7 @@
 #include <deal.II/fe/fe_interface_values.h>
 #include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_q.h>
+#include <deal.II/hp/q_collection.h>
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_update_flags.h>
 #include <deal.II/fe/fe_values.h>
@@ -99,6 +100,12 @@ namespace Step85
       const typename Triangulation<dim>::active_cell_iterator &cell,
       const unsigned int face_index) const;
 
+    void distribute_penalty_terms(
+      const typename DoFHandler<dim>::active_cell_iterator &cell,
+      const unsigned int                                    f,
+      const double                                          ghost_parameter,
+      const double                                          cell_side_length);
+
     AffineConstraints<double> constraints;
 
     const unsigned int fe_degree;
@@ -113,9 +120,11 @@ namespace Step85
     Vector<double>  level_set;
 
     DoFHandler<dim> dof_handler;
+    DoFHandler<dim> dummy_dof_handler;
 
-    FESystem<dim>         fe_1;
-    FESystem<dim>         fe_2;
+    FESystem<dim>         fe_in;
+    FESystem<dim>         fe_surf;
+    FESystem<dim>         fe_out;
     hp::FECollection<dim> fe_collection;
     Vector<double>        solution;
 
@@ -136,12 +145,15 @@ namespace Step85
     , fe_level_set(fe_degree)
     , level_set_dof_handler(triangulation)
     , dof_handler(triangulation)
-    , fe_1(FE_Q<dim>(fe_degree), 1, FE_Nothing<dim>(), 1)
-    , fe_2(FE_Nothing<dim>(), 1, FE_Q<dim>(fe_degree), 1)
+    , dummy_dof_handler(triangulation)
+    , fe_in(FE_Q<dim>(fe_degree), 1, FE_Nothing<dim>(), 1)
+    , fe_surf(FE_Q<dim>(fe_degree), 1, FE_Q<dim>(fe_degree), 1)
+    , fe_out(FE_Nothing<dim>(), 1, FE_Q<dim>(fe_degree), 1)
     , mesh_classifier(level_set_dof_handler, level_set)
   {
-    fe_collection.push_back(fe_1);
-    fe_collection.push_back(fe_2);
+    fe_collection.push_back(fe_in);
+    fe_collection.push_back(fe_surf);
+    fe_collection.push_back(fe_out);
   }
 
 
@@ -243,8 +255,10 @@ namespace Step85
 
   enum ActiveFEIndex
   {
-    sol1 = 0, // inside + intersection
-    sol2 = 1  // outside + intersection
+    sol_in           = 0, // inside
+    sol_intersection = 1, // intersection
+    sol_out          = 2, // outside
+    bounding         = 3
   };
 
   template <int dim>
@@ -252,32 +266,26 @@ namespace Step85
   {
     std::cout << "Distributing degrees of freedom" << std::endl;
 
-
-
     for (const auto &cell : dof_handler.active_cell_iterators())
       {
         const NonMatching::LocationToLevelSet cell_location =
           mesh_classifier.location_to_level_set(cell);
 
-        if (cell_location == NonMatching::LocationToLevelSet::inside ||
-            cell_location == NonMatching::LocationToLevelSet::intersected)
+        if (cell_location == NonMatching::LocationToLevelSet::inside)
           { // inside or intersected => FE_Q(1) + FE_Nothing outside
-            cell->set_active_fe_index(ActiveFEIndex::sol1);
+            cell->set_active_fe_index(ActiveFEIndex::sol_in);
           }
-        else if (cell_location == NonMatching::LocationToLevelSet::outside ||
-                 cell_location == NonMatching::LocationToLevelSet::intersected)
+        if (cell_location == NonMatching::LocationToLevelSet::outside)
           { // outside or intersected => FE_Q(1)
             // + FE_Nothing inside
-            cell->set_active_fe_index(ActiveFEIndex::sol2);
+            cell->set_active_fe_index(ActiveFEIndex::sol_out);
           }
-        else
+        if (cell_location == NonMatching::LocationToLevelSet::intersected)
           {
-            Assert(false,
-                   ExcMessage("Not able to classify properly this cell."));
+            cell->set_active_fe_index(ActiveFEIndex::sol_intersection);
           }
-
-        dof_handler.distribute_dofs(fe_collection);
       }
+    dof_handler.distribute_dofs(fe_collection);
 
     constraints.clear();
     DoFTools::make_hanging_node_constraints(dof_handler, constraints);
@@ -304,7 +312,18 @@ namespace Step85
 
     const auto face_has_flux_coupling = [&](const auto &       cell,
                                             const unsigned int face_index) {
-      return this->face_has_ghost_penalty(cell, face_index);
+      if (this->face_has_ghost_penalty(cell, face_index))
+        {
+          return true;
+        }
+      else if (this->face_has_ghost_penalty_outside(cell, face_index))
+        {
+          return true;
+        }
+      else
+        {
+          return false;
+        }
     };
 
     DynamicSparsityPattern dsp(dof_handler.n_dofs(), dof_handler.n_dofs());
@@ -317,6 +336,9 @@ namespace Step85
     cell_coupling[1][1] = DoFTools::always;
     cell_coupling[1][0] = DoFTools::always;
     face_coupling[0][0] = DoFTools::always;
+    face_coupling[0][1] = DoFTools::always;
+    face_coupling[1][0] = DoFTools::always;
+    face_coupling[1][1] = DoFTools::always;
 
     const AffineConstraints<double> constraints;
     const bool                      keep_constrained_dofs = true;
@@ -364,6 +386,129 @@ namespace Step85
   }
 
 
+  /**
+   * Distribute interface penalty terms. Since this is going to be done when
+   * we're *outside* and *inside*, we add a member function that takes care of
+   * this, to avoid code duplication. We split the jump term
+   *
+   * [u][v] = u0v0 - u0v1 - u1v0 + u1v1
+   *
+   * so we get 4 local matrices, each one of size n_local_dofs x n_local_dofs
+   * and we load them one by one into the stiffness matrix.
+   */
+  template <int dim>
+  void LaplaceSolver<dim>::distribute_penalty_terms(
+    const typename DoFHandler<dim>::active_cell_iterator &cell,
+    const unsigned int                                    f,
+    const double                                          ghost_parameter,
+    const double                                          cell_side_length)
+  {
+    const QGauss<dim - 1>    face_quadrature(fe_degree + 1);
+    hp::QCollection<dim - 1> q_collection(face_quadrature);
+    hp::FEFaceValues<dim>    hp_fe_face0(fe_collection,
+                                      q_collection,
+                                      update_gradients | update_JxW_values |
+                                        update_normal_vectors);
+    hp::FEFaceValues<dim>    hp_fe_face1(fe_collection,
+                                      q_collection,
+                                      update_gradients | update_JxW_values |
+                                        update_normal_vectors);
+    hp_fe_face0.reinit(cell, f);
+    // initialize for neighboring cell and the same face f, seen by
+    // the neighboring cell
+    hp_fe_face1.reinit(cell->neighbor(f), cell->neighbor_of_neighbor(f));
+    const FEFaceValues<dim> &fe_face0 = hp_fe_face0.get_present_fe_values();
+    const FEFaceValues<dim> &fe_face1 = hp_fe_face1.get_present_fe_values();
+
+    std::vector<types::global_dof_index> local_dofs0_indices(
+      fe_face0.dofs_per_cell);
+    std::vector<types::global_dof_index> local_dofs1_indices(
+      fe_face1.dofs_per_cell);
+    cell->get_dof_indices(local_dofs0_indices);
+    cell->neighbor(f)->get_dof_indices(local_dofs1_indices);
+
+    FullMatrix<double> A_00(fe_face0.dofs_per_cell, fe_face0.dofs_per_cell);
+    FullMatrix<double> A_01(fe_face0.dofs_per_cell, fe_face1.dofs_per_cell);
+    FullMatrix<double> A_10(fe_face1.dofs_per_cell, fe_face0.dofs_per_cell);
+    FullMatrix<double> A_11(fe_face1.dofs_per_cell, fe_face1.dofs_per_cell);
+    // A00
+    for (unsigned int q = 0; q < fe_face0.n_quadrature_points; ++q)
+      {
+        const Tensor<1, dim> normal = fe_face0.normal_vector(q);
+        Assert(std::abs(fe_face0.JxW(q) - fe_face1.JxW(q)) < 1e-15,
+               ExcMessage("Not consistent JxW")); // sanity check.
+        const double interface_JxW = fe_face0.JxW(q);
+        {
+          for (unsigned int i = 0; i < fe_face0.dofs_per_cell; ++i)
+            {
+              for (unsigned int j = 0; j < fe_face0.dofs_per_cell; ++j)
+                {
+                  A_00(i, j) += .5 * ghost_parameter * cell_side_length *
+                                normal * fe_face0.shape_grad(i, q) * normal *
+                                fe_face0.shape_grad(j, q) * interface_JxW;
+                }
+            }
+        }
+      }
+    // A01
+    for (unsigned int q = 0; q < fe_face0.n_quadrature_points; ++q)
+      {
+        const Tensor<1, dim> normal        = fe_face0.normal_vector(q);
+        const double         interface_JxW = fe_face0.JxW(q);
+        {
+          for (unsigned int i = 0; i < fe_face0.dofs_per_cell; ++i)
+            {
+              for (unsigned int j = 0; j < fe_face1.dofs_per_cell; ++j)
+                {
+                  A_01(i, j) += -.5 * ghost_parameter * cell_side_length *
+                                normal * fe_face0.shape_grad(i, q) * normal *
+                                fe_face1.shape_grad(j, q) * interface_JxW;
+                }
+            }
+        }
+      }
+    // A10
+    for (unsigned int q = 0; q < fe_face0.n_quadrature_points; ++q)
+      {
+        const Tensor<1, dim> normal        = fe_face1.normal_vector(q);
+        const double         interface_JxW = fe_face0.JxW(q);
+        {
+          for (unsigned int i = 0; i < fe_face1.dofs_per_cell; ++i)
+            {
+              for (unsigned int j = 0; j < fe_face0.dofs_per_cell; ++j)
+                {
+                  A_10(i, j) += -.5 * ghost_parameter * cell_side_length *
+                                normal * fe_face1.shape_grad(i, q) * normal *
+                                fe_face0.shape_grad(j, q) * interface_JxW;
+                }
+            }
+        }
+      }
+    // A11
+    for (unsigned int q = 0; q < fe_face1.n_quadrature_points; ++q)
+      {
+        const Tensor<1, dim> normal        = fe_face1.normal_vector(q);
+        const double         interface_JxW = fe_face0.JxW(q);
+        {
+          for (unsigned int i = 0; i < fe_face1.dofs_per_cell; ++i)
+            {
+              for (unsigned int j = 0; j < fe_face1.dofs_per_cell; ++j)
+                {
+                  A_11(i, j) += .5 * ghost_parameter * cell_side_length *
+                                normal * fe_face1.shape_grad(i, q) * normal *
+                                fe_face1.shape_grad(j, q) * interface_JxW;
+                }
+            }
+        }
+      }
+
+
+    stiffness_matrix.add(local_dofs0_indices, A_00);
+    stiffness_matrix.add(local_dofs0_indices, local_dofs1_indices, A_01);
+    stiffness_matrix.add(local_dofs1_indices, local_dofs0_indices, A_10);
+    stiffness_matrix.add(local_dofs1_indices, A_11);
+  }
+
 
   template <int dim>
   bool LaplaceSolver<dim>::face_has_ghost_penalty_outside(
@@ -402,21 +547,20 @@ namespace Step85
     Vector<double>     local_rhs(n_dofs_per_cell);
     std::vector<types::global_dof_index> local_dof_indices(n_dofs_per_cell);
 
+    FullMatrix<double> local_stiffness_surf(2 * n_dofs_per_cell,
+                                            2 * n_dofs_per_cell);
+    Vector<double>     local_rhs_surf(2 * n_dofs_per_cell);
+    std::vector<types::global_dof_index> local_dof_indices_surf(
+      2 * n_dofs_per_cell);
+
     const double ghost_parameter   = 0.5;
     const double nitsche_parameter = 5 * (fe_degree + 1) * fe_degree;
-
-    const QGauss<dim - 1>  face_quadrature(fe_degree + 1);
-    FEInterfaceValues<dim> fe_interface_values(fe_collection[0],
-                                               face_quadrature,
-                                               update_gradients |
-                                                 update_JxW_values |
-                                                 update_normal_vectors);
-
 
     const FEValuesExtractors::Scalar interior(0);
     const FEValuesExtractors::Scalar exterior(1);
 
-    const QGauss<1> quadrature_1D(fe_degree + 1);
+    const QGauss<dim - 1> face_quadrature(fe_degree + 1);
+    const QGauss<1>       quadrature_1D(fe_degree + 1);
 
     NonMatching::RegionUpdateFlags region_update_flags;
     region_update_flags.inside = update_values | update_gradients |
@@ -434,16 +578,15 @@ namespace Step85
                                                       level_set_dof_handler,
                                                       level_set);
 
-    // Here I loop only on the inside + intersection
+    // Here I loop only on the inside
     for (const auto &cell :
          dof_handler.active_cell_iterators() |
-           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol1))
+           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol_in))
       {
         local_stiffness = 0;
         local_rhs       = 0;
 
         const double cell_side_length = cell->minimum_vertex_distance();
-
         non_matching_fe_values.reinit(cell);
 
         const std_cxx17::optional<FEValues<dim>> &inside_fe_values =
@@ -469,102 +612,35 @@ namespace Step85
                 }
             }
 
-        const std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-          &surface_fe_values = non_matching_fe_values.get_surface_fe_values();
-
-        if (surface_fe_values)
-          {
-            for (const unsigned int q :
-                 surface_fe_values->quadrature_point_indices())
-              {
-                const Point<dim> &point =
-                  surface_fe_values->quadrature_point(q);
-                const Tensor<1, dim> &normal =
-                  surface_fe_values->normal_vector(q);
-                for (const unsigned int i : surface_fe_values->dof_indices())
-                  {
-                    for (const unsigned int j :
-                         surface_fe_values->dof_indices())
-                      {
-                        local_stiffness(i, j) +=
-                          (-normal * surface_fe_values->shape_grad(i, q) *
-                             surface_fe_values->shape_value(j, q) +
-                           -normal * surface_fe_values->shape_grad(j, q) *
-                             surface_fe_values->shape_value(i, q) +
-                           nitsche_parameter / cell_side_length *
-                             surface_fe_values->shape_value(i, q) *
-                             surface_fe_values->shape_value(j, q)) *
-                          surface_fe_values->JxW(q);
-                      }
-                    local_rhs(i) +=
-                      boundary_condition.value(point) *
-                      (nitsche_parameter / cell_side_length *
-                         surface_fe_values->shape_value(i, q) -
-                       normal * surface_fe_values->shape_grad(i, q)) *
-                      surface_fe_values->JxW(q);
-                  }
-              }
-          }
-
         cell->get_dof_indices(local_dof_indices);
 
         stiffness_matrix.add(local_dof_indices, local_stiffness);
         rhs.add(local_dof_indices, local_rhs);
 
+
         for (unsigned int f : cell->face_indices())
-          if (face_has_ghost_penalty(cell, f))
-            {
-              const unsigned int invalid_subface =
-                numbers::invalid_unsigned_int;
+          {
+            if (face_has_ghost_penalty(cell, f))
+              {
+                std::cout << "Internal ghost penalty:" << std::endl;
 
-              fe_interface_values.reinit(cell,
+                distribute_penalty_terms(cell,
                                          f,
-                                         invalid_subface,
-                                         cell->neighbor(f),
-                                         cell->neighbor_of_neighbor(f),
-                                         invalid_subface);
-
-              const unsigned int n_interface_dofs =
-                fe_interface_values.n_current_interface_dofs();
-              FullMatrix<double> local_stabilization(n_interface_dofs,
-                                                     n_interface_dofs);
-              for (unsigned int q = 0;
-                   q < fe_interface_values.n_quadrature_points;
-                   ++q)
-                {
-                  const Tensor<1, dim> normal = fe_interface_values.normal(q);
-                  for (unsigned int i = 0; i < n_interface_dofs; ++i)
-                    for (unsigned int j = 0; j < n_interface_dofs; ++j)
-                      {
-                        local_stabilization(i, j) +=
-                          .5 * ghost_parameter * cell_side_length * normal *
-                          fe_interface_values.jump_in_shape_gradients(i, q) *
-                          normal *
-                          fe_interface_values.jump_in_shape_gradients(j, q) *
-                          fe_interface_values.JxW(q);
-                      }
-                }
-
-              const std::vector<types::global_dof_index>
-                local_interface_dof_indices =
-                  fe_interface_values.get_interface_dof_indices();
-
-              stiffness_matrix.add(local_interface_dof_indices,
-                                   local_stabilization);
-            }
+                                         ghost_parameter,
+                                         cell_side_length);
+              }
+          }
       }
 
-
-    // Solve on outside + intersection
+    // Solve on outside
     for (const auto &cell :
          dof_handler.active_cell_iterators() |
-           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol2))
+           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol_out))
       {
         local_stiffness = 0;
         local_rhs       = 0;
 
         const double cell_side_length = cell->minimum_vertex_distance();
-
         non_matching_fe_values.reinit(cell);
 
         const std_cxx17::optional<FEValues<dim>> &outside_fe_values =
@@ -591,12 +667,120 @@ namespace Step85
                 }
             }
 
+
+
+        cell->get_dof_indices(local_dof_indices);
+        constraints.distribute_local_to_global(
+          local_stiffness, local_rhs, local_dof_indices, stiffness_matrix, rhs);
+
+        hp::QCollection<dim - 1> q_collection(face_quadrature);
+        hp::FEFaceValues<dim>    hp_fe_face0(fe_collection,
+                                          q_collection,
+                                          update_gradients | update_JxW_values |
+                                            update_normal_vectors);
+        hp::FEFaceValues<dim>    hp_fe_face1(fe_collection,
+                                          q_collection,
+                                          update_gradients | update_JxW_values |
+                                            update_normal_vectors);
+        for (unsigned int f : cell->face_indices())
+          {
+            if (face_has_ghost_penalty_outside(cell, f))
+              {
+                std::cout << "Ghost penalty outside" << std::endl;
+                distribute_penalty_terms(cell,
+                                         f,
+                                         ghost_parameter,
+                                         cell_side_length);
+              }
+          }
+      }
+
+
+    // Solve on intersection
+    for (const auto &cell : dof_handler.active_cell_iterators() |
+                              IteratorFilters::ActiveFEIndexEqualTo(
+                                ActiveFEIndex::sol_intersection))
+      {
+        local_stiffness_surf = 0.;
+        local_rhs_surf       = 0.;
+
+        const double cell_side_length = cell->minimum_vertex_distance();
+        non_matching_fe_values.reinit(cell);
+
+        const std_cxx17::optional<FEValues<dim>> &inside_fe_values =
+          non_matching_fe_values.get_inside_fe_values();
+
+        if (inside_fe_values)
+          {
+            for (const unsigned int q :
+                 inside_fe_values->quadrature_point_indices())
+              {
+                const Point<dim> &point = inside_fe_values->quadrature_point(q);
+                for (const unsigned int i : inside_fe_values->dof_indices())
+                  {
+                    for (const unsigned int j : inside_fe_values->dof_indices())
+                      {
+                        if (i % 2 == 0 && j % 2 == 0)
+                          {
+                            local_stiffness_surf(i, j) +=
+                              (*inside_fe_values)[interior].gradient(i, q) *
+                              (*inside_fe_values)[interior].gradient(j, q) *
+                              inside_fe_values->JxW(q);
+                          }
+                      }
+                    if (i % 2 == 0)
+                      {
+                        local_rhs_surf(i) +=
+                          rhs_function.value(point) *
+                          (*inside_fe_values)[interior].value(i, q) *
+                          inside_fe_values->JxW(q);
+                      }
+                  }
+              }
+          }
+
+        const std_cxx17::optional<FEValues<dim>> &outside_fe_values =
+          non_matching_fe_values.get_outside_fe_values();
+
+        if (outside_fe_values)
+          {
+            for (const unsigned int q :
+                 outside_fe_values->quadrature_point_indices())
+              {
+                const Point<dim> &point =
+                  outside_fe_values->quadrature_point(q);
+                for (const unsigned int i : outside_fe_values->dof_indices())
+                  {
+                    for (const unsigned int j :
+                         outside_fe_values->dof_indices())
+                      {
+                        if (i % 2 == 1 && j % 2 == 1)
+                          {
+                            local_stiffness_surf(i, j) +=
+                              (*outside_fe_values)[exterior].gradient(i, q) *
+                              (*outside_fe_values)[exterior].gradient(j, q) *
+                              outside_fe_values->JxW(q);
+                          }
+                      }
+                    if (i % 2 == 1)
+                      {
+                        local_rhs_surf(i) +=
+                          rhs_function.value(point) *
+                          (*outside_fe_values)[exterior].value(i, q) *
+                          outside_fe_values->JxW(q);
+                      }
+                  }
+              }
+          }
+
+
+
         const std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
           &surface_fe_values = non_matching_fe_values.get_surface_fe_values();
-
+        std::cout << surface_fe_values->quadrature_point_indices().size()
+                  << std::endl;
         if (surface_fe_values)
           {
-            std::cout << "Entrato in surface_fe_values outside" << std::endl;
             for (const unsigned int q :
                  surface_fe_values->quadrature_point_indices())
               {
@@ -609,73 +793,78 @@ namespace Step85
                     for (const unsigned int j :
                          surface_fe_values->dof_indices())
                       {
-                        local_stiffness(i, j) +=
-                          (-normal * surface_fe_values->shape_grad(i, q) *
-                             surface_fe_values->shape_value(j, q) +
-                           -normal * surface_fe_values->shape_grad(j, q) *
-                             surface_fe_values->shape_value(i, q) +
-                           nitsche_parameter / cell_side_length *
-                             surface_fe_values->shape_value(i, q) *
-                             surface_fe_values->shape_value(j, q)) *
+                        if (i % 2 == 0 && j % 2 == 0)
+                          {
+                            local_stiffness_surf(i, j) +=
+                              (-normal *
+                                 (*surface_fe_values)
+                                   .shape_grad_component(i, q, 0) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(j, q, 0) +
+                               -normal *
+                                 (*surface_fe_values)
+                                   .shape_grad_component(j, q, 0) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(i, q, 0) +
+                               nitsche_parameter / cell_side_length *
+                                 (*surface_fe_values)
+                                   .shape_value_component(i, q, 0) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(j, q, 0)) *
+                              surface_fe_values->JxW(q);
+                          }
+                        else if (i % 2 == 1 && j % 2 == 1)
+                          {
+                            local_stiffness_surf(i, j) +=
+                              (normal *
+                                 (*surface_fe_values)
+                                   .shape_grad_component(i, q, 1) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(j, q, 1) +
+                               normal *
+                                 (*surface_fe_values)
+                                   .shape_grad_component(j, q, 1) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(i, q, 1) +
+                               nitsche_parameter / cell_side_length *
+                                 (*surface_fe_values)
+                                   .shape_value_component(i, q, 1) *
+                                 (*surface_fe_values)
+                                   .shape_value_component(j, q, 1)) *
+                              surface_fe_values->JxW(q);
+                          }
+                      }
+
+                    if (i % 2 == 0)
+                      {
+                        local_rhs_surf(i) +=
+                          boundary_condition.value(point) *
+                          (nitsche_parameter / cell_side_length *
+                             (*surface_fe_values)
+                               .shape_value_component(i, q, 0) -
+                           normal * (*surface_fe_values)
+                                      .shape_grad_component(i, q, 0)) *
                           surface_fe_values->JxW(q);
                       }
-                    local_rhs(i) +=
-                      boundary_condition.value(point) *
-                      (nitsche_parameter / cell_side_length *
-                         surface_fe_values->shape_value(i, q) -
-                       normal * surface_fe_values->shape_grad(i, q)) *
-                      surface_fe_values->JxW(q);
+                    else
+                      {
+                        local_rhs_surf(i) +=
+                          boundary_condition.value(point) *
+                          (nitsche_parameter / cell_side_length *
+                             (*surface_fe_values)
+                               .shape_value_component(i, q, 1) +
+                           normal * (*surface_fe_values)
+                                      .shape_grad_component(i, q, 1)) *
+                          surface_fe_values->JxW(q);
+                      }
                   }
               }
           }
 
-        cell->get_dof_indices(local_dof_indices);
+        cell->get_dof_indices(local_dof_indices_surf);
 
-        constraints.distribute_local_to_global(
-          local_stiffness, local_rhs, local_dof_indices, stiffness_matrix, rhs);
-
-        for (unsigned int f : cell->face_indices())
-          if (face_has_ghost_penalty_outside(cell, f))
-            {
-              std::cout << "Entrato in ghost penalty outside" << std::endl;
-              const unsigned int invalid_subface =
-                numbers::invalid_unsigned_int;
-
-              fe_interface_values.reinit(cell,
-                                         f,
-                                         invalid_subface,
-                                         cell->neighbor(f),
-                                         cell->neighbor_of_neighbor(f),
-                                         invalid_subface);
-
-              const unsigned int n_interface_dofs =
-                fe_interface_values.n_current_interface_dofs();
-              FullMatrix<double> local_stabilization(n_interface_dofs,
-                                                     n_interface_dofs);
-              for (unsigned int q = 0;
-                   q < fe_interface_values.n_quadrature_points;
-                   ++q)
-                {
-                  const Tensor<1, dim> normal = fe_interface_values.normal(q);
-                  for (unsigned int i = 0; i < n_interface_dofs; ++i)
-                    for (unsigned int j = 0; j < n_interface_dofs; ++j)
-                      {
-                        local_stabilization(i, j) +=
-                          .5 * ghost_parameter * cell_side_length * normal *
-                          fe_interface_values.jump_in_shape_gradients(i, q) *
-                          normal *
-                          fe_interface_values.jump_in_shape_gradients(j, q) *
-                          fe_interface_values.JxW(q);
-                      }
-                }
-
-              const std::vector<types::global_dof_index>
-                local_interface_dof_indices =
-                  fe_interface_values.get_interface_dof_indices();
-
-              stiffness_matrix.add(local_interface_dof_indices,
-                                   local_stabilization);
-            }
+        stiffness_matrix.add(local_dof_indices_surf, local_stiffness_surf);
+        rhs.add(local_dof_indices_surf, local_rhs_surf);
       }
   }
 
@@ -689,6 +878,8 @@ namespace Step85
     SolverControl      solver_control(max_iterations);
     SolverCG<>         solver(solver_control);
     solver.solve(stiffness_matrix, solution, rhs, PreconditionIdentity());
+    std::cout << "Solver in " << solver_control.last_step() << " iterations."
+              << std::endl;
   }
 
 
@@ -739,7 +930,7 @@ namespace Step85
 
     for (const auto &cell :
          dof_handler.active_cell_iterators() |
-           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol1))
+           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol_in))
       {
         non_matching_fe_values.reinit(cell);
 
@@ -785,23 +976,23 @@ namespace Step85
         initialize_matrices();
         assemble_system();
         solve();
-        if (cycle == 3)
-          output_results();
-        const double error_L2 = compute_L2_error();
-        const double cell_side_length =
-          triangulation.begin_active()->minimum_vertex_distance();
+        // if (cycle == 3)
+        output_results();
+        // const double error_L2 = compute_L2_error();
+        // const double cell_side_length =
+        //   triangulation.begin_active()->minimum_vertex_distance();
 
-        convergence_table.add_value("Cycle", cycle);
-        convergence_table.add_value("Mesh size", cell_side_length);
-        convergence_table.add_value("L2-Error", error_L2);
+        // convergence_table.add_value("Cycle", cycle);
+        // convergence_table.add_value("Mesh size", cell_side_length);
+        // convergence_table.add_value("L2-Error", error_L2);
 
-        convergence_table.evaluate_convergence_rates(
-          "L2-Error", ConvergenceTable::reduction_rate_log2);
-        convergence_table.set_scientific("L2-Error", true);
+        // convergence_table.evaluate_convergence_rates(
+        //   "L2-Error", ConvergenceTable::reduction_rate_log2);
+        // convergence_table.set_scientific("L2-Error", true);
 
-        std::cout << std::endl;
-        convergence_table.write_text(std::cout);
-        std::cout << std::endl;
+        // std::cout << std::endl;
+        // convergence_table.write_text(std::cout);
+        // std::cout << std::endl;
       }
   }
 
