@@ -84,7 +84,9 @@ private:
 
   void output_results() const;
 
-  double compute_L2_error() const;
+  double compute_L2_error_from_inside() const;
+
+  double compute_L2_error_from_outside() const;
 
   bool face_has_ghost_penalty(
       const typename Triangulation<dim>::active_cell_iterator &cell,
@@ -143,7 +145,7 @@ template <int dim> void LaplaceSolver<dim>::make_grid() {
   std::cout << "Creating background mesh" << std::endl;
 
   GridGenerator::hyper_cube(triangulation, -1., 1.);
-  triangulation.refine_global(2);
+  triangulation.refine_global(3);
 }
 
 template <int dim> void LaplaceSolver<dim>::setup_discrete_level_set() {
@@ -258,7 +260,6 @@ template <int dim> void LaplaceSolver<dim>::distribute_dofs() {
   DoFTools::make_hanging_node_constraints(dof_handler, constraints);
 
   const FEValuesExtractors::Vector exterior(0);
-  std::cout << fe_collection.n_components() << std::endl;
   VectorTools::interpolate_boundary_values(
       dof_handler, 0, BoundaryValues<dim>(), constraints,
       fe_collection.component_mask(exterior));
@@ -343,18 +344,19 @@ void LaplaceSolver<dim>::distribute_penalty_terms(
   const FEFaceValues<dim> &fe_face0 = hp_fe_face0.get_present_fe_values();
   const FEFaceValues<dim> &fe_face1 = hp_fe_face1.get_present_fe_values();
 
-  std::cout << "DOfs0 per cell: " << fe_face0.dofs_per_cell << std::endl;
-  std::cout << "DOfs1per cell: " << fe_face1.dofs_per_cell << std::endl;
-  if (fe_face0.dofs_per_cell == 4) {
-    std::cout << "4 DoFS cell0" << std::endl;
-  }
-  if (fe_face1.dofs_per_cell == 4) {
-    std::cout << "4 DoFS cell1" << std::endl;
-  }
+  // std::cout << "DOfs0 per cell: " << fe_face0.dofs_per_cell << std::endl;
+  // std::cout << "DOfs1per cell: " << fe_face1.dofs_per_cell << std::endl;
+  // if (fe_face0.dofs_per_cell == 4)
+  //   {
+  //     std::cout << "4 DoFS cell0" << std::endl;
+  //   }
+  // if (fe_face1.dofs_per_cell == 4)
+  //   {
+  //     std::cout << "4 DoFS cell1" << std::endl;
+  //   }
   Assert(!(fe_face0.dofs_per_cell == 4 && fe_face1.dofs_per_cell == 4),
          ExcMessage("They cannot have both 4 DoFs."));
-  // Assert(fe_face0.dofs_per_cell >= fe_face1.dofs_per_cell,
-  //        ExcMessage("Second FE is richer than First."));
+
   std::vector<types::global_dof_index> local_dofs0_indices(
       fe_face0.dofs_per_cell);
   std::vector<types::global_dof_index> local_dofs1_indices(
@@ -539,8 +541,8 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
   Vector<double> local_rhs(n_dofs_per_cell);
   std::vector<types::global_dof_index> local_dof_indices(n_dofs_per_cell);
 
-  std::cout << "nDoFs per intersected cell: " << fe_collection[1].dofs_per_cell
-            << std::endl;
+  // std::cout << "nDoFs per intersected cell: "
+  //           << fe_collection[1].dofs_per_cell << std::endl;
   const unsigned int n_dofs_per_intersected_cell =
       fe_collection[1].dofs_per_cell;
   FullMatrix<double> local_stiffness_surf(n_dofs_per_intersected_cell,
@@ -583,7 +585,7 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
     const std_cxx17::optional<FEValues<dim>> &inside_fe_values =
         non_matching_fe_values.get_inside_fe_values();
 
-    std::cout << inside_fe_values->shape_grad(0, 1) << std::endl;
+    // std::cout << inside_fe_values->shape_grad(0, 1) << std::endl;
 
     if (inside_fe_values)
       for (const unsigned int q :
@@ -650,7 +652,6 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
 
     for (unsigned int f : cell->face_indices()) {
       if (face_has_ghost_penalty_outside(cell, f)) {
-        // std::cout << "Ghost penalty outside" << std::endl;
         distribute_penalty_terms(cell, f, ghost_parameter, cell_side_length,
                                  1); // reminder == 1
       }
@@ -670,7 +671,6 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
     const std_cxx17::optional<FEValues<dim>> &inside_fe_values =
         non_matching_fe_values.get_inside_fe_values();
 
-    std::cout << inside_fe_values->dof_indices().size() << std::endl;
     if (inside_fe_values) {
       for (const unsigned int q :
            inside_fe_values->quadrature_point_indices()) {
@@ -770,9 +770,11 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
           }
 
           if (i % 2 == 0) {
-            std::cout << "Test: "
-                      << surface_fe_values->shape_value_component(i, q, 1)
-                      << std::endl;
+            // std::cout
+            //   << "Test: "
+            //   << surface_fe_values->shape_value_component(i, q,
+            //   1)
+            //   << std::endl;
             local_rhs_surf(i) +=
                 AnalyticalSolution<dim>().value(point) *
                 (nitsche_parameter / cell_side_length *
@@ -805,7 +807,7 @@ template <int dim> void LaplaceSolver<dim>::solve() {
   SolverControl solver_control(max_iterations);
   SolverCG<> solver(solver_control);
   solver.solve(stiffness_matrix, solution, rhs, PreconditionIdentity());
-  std::cout << "Solver in " << solver_control.last_step() << " iterations."
+  std::cout << "Solved in " << solver_control.last_step() << " iterations."
             << std::endl;
   constraints.distribute(solution);
 }
@@ -817,28 +819,41 @@ template <int dim> void LaplaceSolver<dim>::output_results() const {
   data_out.add_data_vector(dof_handler, solution, "solution");
   data_out.add_data_vector(level_set_dof_handler, level_set, "level_set");
 
-  // data_out.set_cell_selection(
-  //   [this](const typename Triangulation<dim>::cell_iterator &cell) {
-  //     return cell->is_active() &&
-  //            mesh_classifier.location_to_level_set(cell) !=
-  //              NonMatching::LocationToLevelSet::outside;
-  //   });
+  data_out.set_cell_selection(
+      [this](const typename Triangulation<dim>::cell_iterator &cell) {
+        return cell->is_active() &&
+               mesh_classifier.location_to_level_set(cell) !=
+                   NonMatching::LocationToLevelSet::outside;
+      });
 
   data_out.build_patches();
-  std::ofstream output("step-85.vtu");
-  data_out.write_vtu(output);
+  std::ofstream output_inside_inter("cutFEM_inside_intersected.vtu");
+  data_out.write_vtu(output_inside_inter);
+
+  data_out.set_cell_selection(
+      [this](const typename Triangulation<dim>::cell_iterator &cell) {
+        return cell->is_active() &&
+               mesh_classifier.location_to_level_set(cell) ==
+                   NonMatching::LocationToLevelSet::outside;
+      });
+
+  data_out.build_patches();
+  std::ofstream output_outside("cutFEM_outside.vtu");
+  data_out.write_vtu(output_outside);
 }
 
-template <int dim> double LaplaceSolver<dim>::compute_L2_error() const {
-  std::cout << "Computing L2 error" << std::endl;
+template <int dim>
+double LaplaceSolver<dim>::compute_L2_error_from_inside() const {
+  std::cout << "Computing L2 error from inside" << std::endl;
 
   const QGauss<1> quadrature_1D(fe_degree + 1);
 
   NonMatching::RegionUpdateFlags region_update_flags;
   region_update_flags.inside =
       update_values | update_JxW_values | update_quadrature_points;
-  region_update_flags.outside =
-      update_values | update_JxW_values | update_quadrature_points;
+  region_update_flags.surface = update_values | update_gradients |
+                                update_JxW_values | update_quadrature_points |
+                                update_normal_vectors;
 
   NonMatching::FEValues<dim> non_matching_fe_values(
       fe_collection, quadrature_1D, region_update_flags, mesh_classifier,
@@ -846,6 +861,96 @@ template <int dim> double LaplaceSolver<dim>::compute_L2_error() const {
 
   const AnalyticalSolution<dim> analytical_solution;
   double error_L2_squared = 0;
+  FEValuesExtractors::Scalar interior(0);
+
+  for (const auto &cell :
+       dof_handler.active_cell_iterators() |
+           IteratorFilters::ActiveFEIndexEqualTo(ActiveFEIndex::sol_in)) {
+    non_matching_fe_values.reinit(cell);
+
+    const std_cxx17::optional<FEValues<dim>> &fe_values =
+        non_matching_fe_values.get_inside_fe_values();
+
+    if (fe_values) {
+      std::vector<double> solution_values(fe_values->n_quadrature_points);
+      (*fe_values)[interior].get_function_values(solution, solution_values);
+
+      for (const unsigned int q : fe_values->quadrature_point_indices()) {
+        const Point<dim> &point = fe_values->quadrature_point(q);
+        const double error_at_point =
+            solution_values[q] - analytical_solution.value(point);
+        error_L2_squared += std::pow(error_at_point, 2) * fe_values->JxW(q);
+      }
+    }
+  }
+
+  for (const auto &cell : dof_handler.active_cell_iterators() |
+                              IteratorFilters::ActiveFEIndexEqualTo(
+                                  ActiveFEIndex::sol_intersection)) {
+    non_matching_fe_values.reinit(cell);
+
+    const std_cxx17::optional<FEValues<dim>> &inside_fe_values =
+        non_matching_fe_values.get_inside_fe_values();
+
+    if (inside_fe_values) {
+      std::vector<double> solution_values(
+          inside_fe_values->n_quadrature_points);
+      (*inside_fe_values)[interior].get_function_values(solution,
+                                                        solution_values);
+
+      for (const unsigned int q :
+           inside_fe_values->quadrature_point_indices()) {
+        const Point<dim> &point = inside_fe_values->quadrature_point(q);
+        const double error_at_point =
+            solution_values[q] - analytical_solution.value(point);
+        error_L2_squared +=
+            std::pow(error_at_point, 2) * inside_fe_values->JxW(q);
+      }
+    }
+
+    const std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
+        &surface_fe_values = non_matching_fe_values.get_surface_fe_values();
+    if (surface_fe_values) {
+      std::vector<double> solution_values(
+          surface_fe_values->n_quadrature_points);
+      (*surface_fe_values)[interior].get_function_values(solution,
+                                                         solution_values);
+
+      for (const unsigned int q :
+           surface_fe_values->quadrature_point_indices()) {
+        const Point<dim> &point = surface_fe_values->quadrature_point(q);
+        const double error_at_point =
+            solution_values[q] - analytical_solution.value(point);
+        error_L2_squared +=
+            std::pow(error_at_point, 2) * surface_fe_values->JxW(q);
+      }
+    }
+  }
+
+  return std::sqrt(error_L2_squared);
+}
+
+template <int dim>
+double LaplaceSolver<dim>::compute_L2_error_from_outside() const {
+  std::cout << "Computing L2 error from outside" << std::endl;
+
+  const QGauss<1> quadrature_1D(fe_degree + 1);
+
+  NonMatching::RegionUpdateFlags region_update_flags;
+
+  region_update_flags.outside =
+      update_values | update_JxW_values | update_quadrature_points;
+  region_update_flags.surface = update_values | update_gradients |
+                                update_JxW_values | update_quadrature_points |
+                                update_normal_vectors;
+
+  NonMatching::FEValues<dim> non_matching_fe_values(
+      fe_collection, quadrature_1D, region_update_flags, mesh_classifier,
+      level_set_dof_handler, level_set);
+
+  const AnalyticalSolution<dim> analytical_solution;
+  double error_L2_squared = 0.;
+  FEValuesExtractors::Scalar exterior(1);
 
   for (const auto &cell :
        dof_handler.active_cell_iterators() |
@@ -857,14 +962,55 @@ template <int dim> double LaplaceSolver<dim>::compute_L2_error() const {
 
     if (fe_values) {
       std::vector<double> solution_values(fe_values->n_quadrature_points);
-      FEValuesExtractors::Scalar interior(1);
-      (*fe_values)[interior].get_function_values(solution, solution_values);
+      (*fe_values)[exterior].get_function_values(solution, solution_values);
 
       for (const unsigned int q : fe_values->quadrature_point_indices()) {
         const Point<dim> &point = fe_values->quadrature_point(q);
         const double error_at_point =
             solution_values[q] - analytical_solution.value(point);
         error_L2_squared += std::pow(error_at_point, 2) * fe_values->JxW(q);
+      }
+    }
+  }
+
+  for (const auto &cell : dof_handler.active_cell_iterators() |
+                              IteratorFilters::ActiveFEIndexEqualTo(
+                                  ActiveFEIndex::sol_intersection)) {
+    non_matching_fe_values.reinit(cell);
+    const std_cxx17::optional<FEValues<dim>> &outside_fe_values =
+        non_matching_fe_values.get_outside_fe_values();
+
+    if (outside_fe_values) {
+      std::vector<double> solution_values(
+          outside_fe_values->n_quadrature_points);
+      (*outside_fe_values)[exterior].get_function_values(solution,
+                                                         solution_values);
+
+      for (const unsigned int q :
+           outside_fe_values->quadrature_point_indices()) {
+        const Point<dim> &point = outside_fe_values->quadrature_point(q);
+        const double error_at_point =
+            solution_values[q] - analytical_solution.value(point);
+        error_L2_squared +=
+            std::pow(error_at_point, 2) * outside_fe_values->JxW(q);
+      }
+    }
+
+    const std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
+        &surface_fe_values = non_matching_fe_values.get_surface_fe_values();
+    if (surface_fe_values) {
+      std::vector<double> solution_values(
+          surface_fe_values->n_quadrature_points);
+      (*surface_fe_values)[exterior].get_function_values(solution,
+                                                         solution_values);
+
+      for (const unsigned int q :
+           surface_fe_values->quadrature_point_indices()) {
+        const Point<dim> &point = surface_fe_values->quadrature_point(q);
+        const double error_at_point =
+            solution_values[q] - analytical_solution.value(point);
+        error_L2_squared +=
+            std::pow(error_at_point, 2) * surface_fe_values->JxW(q);
       }
     }
   }
@@ -889,7 +1035,8 @@ template <int dim> void LaplaceSolver<dim>::run() {
     solve();
     // if (cycle == 3)
     output_results();
-    const double error_L2 = compute_L2_error();
+    // const double error_L2 = compute_L2_error_from_inside();
+    const double error_L2 = compute_L2_error_from_outside();
     const double cell_side_length =
         triangulation.begin_active()->minimum_vertex_distance();
 
