@@ -33,6 +33,7 @@
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
 
+#include <deal.II/fe/fe_dgq.h>
 #include <deal.II/fe/fe_q.h>
 
 #include <deal.II/grid/filtered_iterator.h>
@@ -87,7 +88,11 @@ public:
 
     int embedded_post_refinement_cycles = 0;
 
-    std::string coupling_strategy;
+    std::string coupling_strategy = "exact";
+
+    unsigned int fe_space_degree = 1;
+
+    unsigned int fe_embedded_degree = 1;
   };
 
   PoissonDLM(const Parameters &parameters);
@@ -125,8 +130,8 @@ private:
                  dealii::Quadrature<spacedim>>>
       cells_and_quads;
 
-  FE_Q<spacedim> space_fe;
-  FE_Q<dim, spacedim> embedded_fe;
+  std::unique_ptr<FE_Q<spacedim>> space_fe;
+  std::unique_ptr<FE_Q<dim, spacedim>> embedded_fe;
 
   /**
    * The actual DoFHandler class.
@@ -196,13 +201,17 @@ PoissonDLM<dim, spacedim>::Parameters::Parameters()
 
   add_parameter("Coupling strategy", coupling_strategy);
 
+  add_parameter("Finite element space degree", fe_space_degree);
+
+  add_parameter("Finite element embedded degree", fe_embedded_degree);
+
   parse_parameters_call_back.connect([&]() -> void { initialized = true; });
 }
 
 template <int dim, int spacedim>
 PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
-    : parameters(parameters), space_fe(1), embedded_fe(1),
-      rhs_function("Right hand side"), solution_function("Solution"),
+    : parameters(parameters), rhs_function("Right hand side"),
+      solution_function("Solution"),
       boundary_condition_function("Boundary condition"),
       timer(std::cout, TimerOutput::every_call_and_summary,
             TimerOutput::cpu_times) {
@@ -247,6 +256,10 @@ void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
           parameters.embedded_initial_global_refinements); // 2
     }
   }
+
+  space_fe = std::make_unique<FE_Q<spacedim>>(parameters.fe_space_degree);
+  embedded_fe =
+      std::make_unique<FE_Q<dim, spacedim>>(parameters.fe_embedded_degree);
 
   space_cache = std::make_unique<GridTools::Cache<spacedim, spacedim>>(
       space_triangulation);
@@ -389,7 +402,7 @@ template <int dim, int spacedim>
 void PoissonDLM<dim, spacedim>::setup_space_dofs() {
   // Setup space DoFs
   space_dh = std::make_unique<DoFHandler<spacedim>>(space_triangulation);
-  space_dh->distribute_dofs(space_fe);
+  space_dh->distribute_dofs(*space_fe);
   std::cout << "Number of dofs in space: " << space_dh->n_dofs() << std::endl;
   space_constraints.clear();
   DoFTools::make_hanging_node_constraints(*space_dh, space_constraints);
@@ -413,14 +426,14 @@ template <int dim, int spacedim>
 void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
   embedded_dh =
       std::make_unique<DoFHandler<dim, spacedim>>(embedded_triangulation);
-  embedded_dh->distribute_dofs(embedded_fe);
+  embedded_dh->distribute_dofs(*embedded_fe);
   embedded_rhs.reinit(embedded_dh->n_dofs());
   lambda.reinit(embedded_dh->n_dofs());
 }
 
 template <int dim, int spacedim>
 void PoissonDLM<dim, spacedim>::setup_coupling() {
-  QGauss<dim> quad(2 * space_fe.degree + 1);
+  QGauss<dim> quad(2 * parameters.fe_space_degree + 1);
 
   DynamicSparsityPattern dsp(space_dh->n_dofs(), embedded_dh->n_dofs());
 
@@ -430,7 +443,8 @@ void PoissonDLM<dim, spacedim>::setup_coupling() {
     if (parameters.coupling_strategy == "inexact") {
       NonMatching::create_coupling_sparsity_pattern(
           0., *space_cache, *embedded_cache, *space_dh, *embedded_dh,
-          QGauss<dim>(2 * space_fe.degree + 1), dsp, space_constraints);
+          QGauss<dim>(2 * parameters.fe_space_degree + 1), dsp,
+          space_constraints);
     } else if (parameters.coupling_strategy == "exact") {
       NonMatching::create_coupling_sparsity_pattern_with_exact_intersections(
           cells_and_quads, *space_dh, *embedded_dh, dsp, space_constraints,
@@ -449,13 +463,13 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
     TimerOutput::Scope timer_section(timer, "Assemble system");
     std::cout << "Assemble system" << std::endl;
 
-    QGauss<spacedim> quadrature_formula(2 * space_fe.degree + 1);
+    QGauss<spacedim> quadrature_formula(2 * parameters.fe_space_degree + 1);
     FEValues<spacedim, spacedim> fe_values(
-        space_mapping, space_fe, quadrature_formula,
+        space_mapping, *space_fe, quadrature_formula,
         update_values | update_gradients | update_quadrature_points |
             update_JxW_values);
 
-    const unsigned int dofs_per_cell = space_fe.n_dofs_per_cell();
+    const unsigned int dofs_per_cell = space_fe->n_dofs_per_cell();
     FullMatrix<double> cell_matrix(dofs_per_cell, dofs_per_cell);
     Vector<double> cell_rhs(dofs_per_cell);
 
@@ -486,9 +500,10 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
                                                    stiffness_matrix, space_rhs);
     }
 
-    VectorTools::create_right_hand_side(embedded_mapping, *embedded_dh,
-                                        QGauss<dim>(2 * embedded_fe.degree + 1),
-                                        solution_function, embedded_rhs);
+    VectorTools::create_right_hand_side(
+        embedded_mapping, *embedded_dh,
+        QGauss<dim>(2 * parameters.fe_embedded_degree + 1), solution_function,
+        embedded_rhs);
   }
 
   std::cout << "Assemble coupling term" << std::endl;
@@ -497,9 +512,10 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
 
     if (parameters.coupling_strategy == "inexact") {
       NonMatching::create_coupling_mass_matrix(
-          *space_dh, *embedded_dh, QGauss<dim>(2 * space_fe.degree + 1),
-          coupling_matrix, space_constraints, ComponentMask(), ComponentMask(),
-          space_mapping, embedded_mapping, embedded_constraints);
+          *space_dh, *embedded_dh,
+          QGauss<dim>(2 * parameters.fe_space_degree + 1), coupling_matrix,
+          space_constraints, ComponentMask(), ComponentMask(), space_mapping,
+          embedded_mapping, embedded_constraints);
     } else if (parameters.coupling_strategy == "exact") {
       // Coupling mass matrix
       NonMatching::create_coupling_mass_matrix_with_exact_intersections(
@@ -556,7 +572,8 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
     VectorTools::integrate_difference(
         *space_dh, solution, solution_function, difference_per_cell,
-        QGauss<spacedim>(2 * space_fe.degree + 1), VectorTools::L2_norm);
+        QGauss<spacedim>(2 * parameters.fe_space_degree + 1),
+        VectorTools::L2_norm);
     const double L2_error = VectorTools::compute_global_error(
         space_triangulation, difference_per_cell, VectorTools::L2_norm);
 
@@ -565,7 +582,8 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
             .n_active_cells()); // zero out again to store the H1 error
     VectorTools::integrate_difference(
         *space_dh, solution, solution_function, difference_per_cell,
-        QGauss<spacedim>(2 * space_fe.degree + 1), VectorTools::H1_norm);
+        QGauss<spacedim>(2 * parameters.fe_space_degree + 1),
+        VectorTools::H1_norm);
     const double H1_error = VectorTools::compute_global_error(
         space_triangulation, difference_per_cell, VectorTools::H1_norm);
 
@@ -605,7 +623,8 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::run() {
               timer, "Compute quadratures on mesh intersections");
           cells_and_quads =
               NonMatching::collect_quadratures_on_overlapped_grids(
-                  *space_cache, *embedded_cache, 2 * space_fe.degree + 1);
+                  *space_cache, *embedded_cache,
+                  2 * parameters.fe_space_degree + 1);
         }
       }
 
@@ -616,7 +635,7 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::run() {
     output_results(cycle);
     if (cycle < parameters.n_refinement_cycles - 1) {
       space_triangulation.refine_global(1);
-      embedded_triangulation.refine_global(1);
+      // embedded_triangulation.refine_global(1);
     }
   }
   cells_and_quads.clear();
