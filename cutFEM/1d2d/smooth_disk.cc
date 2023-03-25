@@ -91,8 +91,8 @@ public:
     // const double w = 12.;
     const double R = .3;
     // const double r = .1;
-    // const double x = p[0];
-    // const double y = p[1];
+    const double x = p[0];
+    const double y = p[1];
     // const double oscillating_term =
     //     (1. - 2. * (y * y) / (x * x + y * y)) *
     //     (1. - 16. * (x * x * y * y) / ((x * x + y * y) * (x * x + y * y)));
