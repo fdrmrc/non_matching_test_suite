@@ -7,9 +7,9 @@ Collection of C++ finite element programs testing different coupling strategies 
 ## How to compile and run
 We provide parameter files (.prm) for test cases, allowing the user to change rhs, boundary conditions, number of refinement cycles and mesh related parameters. To compile and run, move into the desired folder (e.g. `/LagrangeMultiplier/1d2d`).
 
-- Set the `DEAL_II_DIR` to the directory where you built the branch above. Alternatively, you can pass it as one of CMake flags
+- Set the `DEAL_II_DIR` to the directory where you built the branch above. Alternatively, you can pass it as one of the CMake flags
 
-- `cmake .` , or `cmake -DDEAL_II_DIR=/your/local/path/to/deal`   
+- `cmake .` , or `cmake -DDEAL_II_DIR=/your/local/path/to/deal` if you want to pass it as a flag
 
 - Compile with `make ` (or `make -jN`)
 
