@@ -18,6 +18,7 @@
 
 #include "intersections.h"
 #include "non_matching_utilities.h"
+#include <deal.II/distributed/tria.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/non_matching/coupling.h>
 
