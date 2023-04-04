@@ -1,9 +1,7 @@
 # Usually, you will not need to modify anything beyond this point...
 CMAKE_MINIMUM_REQUIRED(VERSION 2.8.12)
 
-set(CMAKE_CXX_FLAGS_DEBUG "${CMAKE_CXX_FLAGS_DEBUG} -DAGGLO_DEBUG")
-
-FIND_PACKAGE(deal.II 9.5.0 QUIET
+FIND_PACKAGE(deal.II 9.4.0 QUIET
   HINTS ${deal.II_DIR} ${DEAL_II_DIR} ../ ../../ $ENV{DEAL_II_DIR}
 )
 
