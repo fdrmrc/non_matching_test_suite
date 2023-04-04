@@ -23,5 +23,4 @@ jobs:
           username: "${{ github.actor }}"
           password: "${{ secrets.GITHUB_TOKEN }}"
       - name: Build the non_matching_test_suite Docker image
-          run: |
-                ./scripts/update_docker_image.sh
+          run: ./scripts/update_docker_image.sh
