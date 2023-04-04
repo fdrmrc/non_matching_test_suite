@@ -1,6 +1,6 @@
 # Non Matching Test Suite
 
-Collection of C++ finite element programs testing different coupling strategies with Non Matching techniques and showing benefits of composite quadrature rules on mesh intersections. This is done by integrating the C++ library `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, all examples are based on the developement branch https://github.com/luca-heltai/dealii/tree/Non_matching_tests, which requires a C++17-compliant compiler and the a `CGAL` version greater than 5.5.2 installed.
+Collection of C++ finite element programs testing different coupling strategies with Non Matching techniques using composite quadrature rules on mesh intersections. This is done by integrating the C++ library `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, all examples require a `deal.II` version greater or equal to `9.4.2`, a C++17-compliant compiler and a `CGAL` version greater than 5.5.2 installed.
 
 ![Screenshot](grids/Flower_interface.png)
 
