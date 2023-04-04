@@ -66,7 +66,7 @@
 
 using namespace dealii;
 
-template <int dim, int spacedim = dim> class PoissonDLM {
+template <int dim, int spacedim = dim> class PoissonLM {
 public:
   class Parameters : public ParameterAcceptor {
   public:
@@ -101,7 +101,7 @@ public:
     unsigned int embedded_configuration_finite_element_degree = 1;
   };
 
-  PoissonDLM(const Parameters &parameters);
+  PoissonLM(const Parameters &parameters);
 
   void run();
 
@@ -197,7 +197,7 @@ private:
 };
 
 template <int dim, int spacedim>
-PoissonDLM<dim, spacedim>::Parameters::Parameters()
+PoissonLM<dim, spacedim>::Parameters::Parameters()
     : ParameterAcceptor("/Distributed Lagrange<" +
                         Utilities::int_to_string(dim) + "," +
                         Utilities::int_to_string(spacedim) + ">/") {
@@ -236,7 +236,7 @@ PoissonDLM<dim, spacedim>::Parameters::Parameters()
 }
 
 template <int dim, int spacedim>
-PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
+PoissonLM<dim, spacedim>::PoissonLM(const Parameters &parameters)
     : parameters(parameters), space_triangulation(MPI_COMM_WORLD),
       mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
@@ -269,7 +269,7 @@ PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
+void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
   // TimerOutput::Scope timer_section(timer, "Generate grids");
   if (cycle == 0) {
     GridGenerator::hyper_cube(space_triangulation, -1., 1.);
@@ -353,8 +353,7 @@ void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
             << std::endl;
 }
 
-template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::adjust_grids() {
+template <int dim, int spacedim> void PoissonLM<dim, spacedim>::adjust_grids() {
 
   std::cout << "Adjusting the grids..." << std::endl;
   namespace bgi = boost::geometry::index;
@@ -466,7 +465,7 @@ void PoissonDLM<dim, spacedim>::adjust_grids() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_space_dofs() {
+void PoissonLM<dim, spacedim>::setup_space_dofs() {
   // Setup space DoFs
   space_dh = std::make_unique<DoFHandler<spacedim>>(space_triangulation);
   space_dh->distribute_dofs(*space_fe);
@@ -498,7 +497,7 @@ void PoissonDLM<dim, spacedim>::setup_space_dofs() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
+void PoissonLM<dim, spacedim>::setup_embedded_dofs() {
   embedded_dh =
       std::make_unique<DoFHandler<dim, spacedim>>(embedded_triangulation);
   embedded_dh->distribute_dofs(*embedded_fe);
@@ -522,7 +521,7 @@ void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_coupling() {
+void PoissonLM<dim, spacedim>::setup_coupling() {
   QGauss<dim> quad(2 * parameters.fe_space_degree + 1);
 
   DynamicSparsityPattern dsp(space_dh->n_dofs(), embedded_dh->n_dofs());
@@ -562,7 +561,7 @@ void PoissonDLM<dim, spacedim>::setup_coupling() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::assemble_system() {
+void PoissonLM<dim, spacedim>::assemble_system() {
   {
     TimerOutput::Scope timer_section(timer, "Assemble system");
     std::cout << "Assemble system" << std::endl;
@@ -667,7 +666,7 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
 }
 
 // We solve the resulting system as done in the classical Poisson example.
-template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
+template <int dim, int spacedim> void PoissonLM<dim, spacedim>::solve() {
   // TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
@@ -724,7 +723,7 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
 
 // Finally, we output the solution living in the embedding space
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
+void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
   TimerOutput::Scope timer_section(timer, "Output results");
   std::cout << "Output results" << std::endl;
   data_out.clear();
@@ -791,7 +790,7 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
   }
 }
 
-template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::run() {
+template <int dim, int spacedim> void PoissonLM<dim, spacedim>::run() {
   for (cycle = 0; cycle < parameters.n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     {
@@ -859,8 +858,8 @@ int main(int argc, char **argv) {
     {
       std::cout << "Solving in 1D/2D" << std::endl;
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-      PoissonDLM<1, 2>::Parameters parameters;
-      PoissonDLM<1, 2> problem(parameters);
+      PoissonLM<1, 2>::Parameters parameters;
+      PoissonLM<1, 2> problem(parameters);
       std::string parameter_file;
       if (argc > 1)
         parameter_file = argv[1];
