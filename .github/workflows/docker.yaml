@@ -1,8 +1,8 @@
 name: Create and publish Docker image
 
-on: 
+on:
   push:
-    branches: ['main']
+    branches: ["main"]
 
 jobs:
   publish-docker-image:
@@ -11,7 +11,7 @@ jobs:
     permissions:
       contents: read
       packages: write
-    
+
     steps:
       - name: Checkout the repository
         uses: actions/checkout@v2
@@ -22,5 +22,6 @@ jobs:
           registry: ghcr.io
           username: "${{ github.actor }}"
           password: "${{ secrets.GITHUB_TOKEN }}"
-      - name: Build the non_matching_test_suite Docker image
-          run: ./scripts/update_docker_image.sh
+      - name: "Build the non_matching_test_suite Docker image"
+        run: |
+          ./scripts/update_docker_image.sh
