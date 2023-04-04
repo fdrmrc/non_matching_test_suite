@@ -1,0 +1,10 @@
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/lagrange_multiplier.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/run.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/sign.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/debug.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/runclean.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/distclean.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/strip_comments.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/info.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/edit_cache.dir
+/Users/marcofeder/Desktop/Paper_NonMatching/Non_matching_test_suite/LagrangeMultiplier/1d2d/CMakeFiles/rebuild_cache.dir
