@@ -31,8 +31,6 @@
 #include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 #include <deal.II/lac/trilinos_vector.h>
-#include <deal.II/non_matching/coupling.h>
-#include <deal.II/non_matching/quadrature_overlapped_grids.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/error_estimator.h>
 
@@ -60,12 +58,10 @@
 #include <deal.II/lac/vector.h>
 #include <deal.II/non_matching/coupling.h>
 
-// #include
-// "/workspace/dealii/examples/exact_non_matching/NonMatching_utilities.h"
+#include "coupling_utilities.h"
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
-
 #include <fstream>
 #include <iostream>
 

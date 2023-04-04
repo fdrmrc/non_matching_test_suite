@@ -233,7 +233,7 @@ void LaplaceSolver<dim>::setup_discrete_level_set(const unsigned int cycle) {
         CGALWrappers::dealii_point_to_cgal_point<Point2>(cell->vertex(0)));
   }
 
-  NonMatchingUtilities::mark_domains(tr);
+  NonMatchingUtilities::split_domain(tr);
 
   GridTools::Cache<dim - 1, dim> cache(embedded_tria);
   auto tree = cache.get_cell_bounding_boxes_rtree();
