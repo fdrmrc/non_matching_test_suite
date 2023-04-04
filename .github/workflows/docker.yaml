@@ -1,10 +1,13 @@
 name: Create and publish Docker image
-  on: [push]
+
+on: 
+  push:
+    branches: ['main']
 
 jobs:
   publish-docker-image:
     runs-on: ubuntu-latest
-    
+
     permissions:
       contents: read
       packages: write
