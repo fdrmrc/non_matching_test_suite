@@ -22,7 +22,7 @@ Error! The non-matching testsuite requires a CGAL library installation, i.e.,
 you should compile deal.II with the following option turned on: 
     DEAL_II_WITH_CGAL = ON
 However, the deal.II library found at ${DEAL_II_PATH} was configured with these options:
-    DEAL_II_WITH_CGAL = ${DEAL_II_WITH_MPI}
+    DEAL_II_WITH_CGAL = ${DEAL_II_WITH_CGAL}
 This conflicts with the requirements."
     )
 ENDIF()
