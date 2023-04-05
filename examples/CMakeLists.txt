@@ -15,10 +15,10 @@ set(APP_LIST
     "
     lm_1d2d_disk  :  lagrange_multiplier/1d2d/lagrange_multiplier.cc;
     lm_1d2d_flower:  lagrange_multiplier/1d2d/lagrange_multiplier_flower.cc;
-    lm_2d3d  :  lagrange_multiplier/2d3d/lagrange_multiplier.cc;")
-    # nitsche_1d2d_smooth_disk  :  InterfacePenalisation/1d2d/smooth_disk.cc;
-    # nitsche_1d2d_non_smooth_disk  :  InterfacePenalisation/1d2d/non_smooth_disk.cc;
-    # nitsche_1d2d_smooth_flower  :  InterfacePenalisation/1d2d/smooth_flower.cc;
+    lm_2d3d  :  lagrange_multiplier/2d3d/lagrange_multiplier.cc;
+    nitsche_1d2d_smooth_disk  :  interface_penalisation/1d2d/smooth_disk.cc;
+    nitsche_1d2d_non_smooth_disk  :  interface_penalisation/1d2d/non_smooth_disk.cc;
+    nitsche_1d2d_smooth_flower  :  interface_penalisation/1d2d/smooth_flower.cc;")
     # nitsche_2d23_interface_penalisation  :  InterfacePenalisation/2d3d/interface_penalisation.cc;
     #  cufem_1d2d_smooth_disk  :  cut_fem/1d2d/smooth_disk.cc;
     #  cufem_1d2d_non_smooth_disk  :  cut_fem/1d2d/non_smooth_disk.cc;
