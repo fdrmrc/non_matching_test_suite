@@ -6,7 +6,7 @@ COPY . /usr/src/non_matching_test_suite
 
 RUN \
     cd /usr/src/non_matching_test_suite && mkdir build && cd build && \
-    cmake -GNinja .. && \
+    cmake -GNinja -DCMAKE_BUILD_TYPE=DebugRelease .. && \
     ninja -j1 && \
     (ninja install || echo "Nothing to install") && \
     cd ../ && rm -rf build .git
