@@ -23,6 +23,8 @@
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
 #include <deal.II/fe/fe_system.h>
+#include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_out.h>
 #include <deal.II/lac/linear_operator_tools.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/sparse_direct.h>
@@ -33,8 +35,6 @@
 #include <deal.II/lac/trilinos_vector.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/error_estimator.h>
-
-#include <deal.II/grid/grid_out.h>
 
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
@@ -289,12 +289,10 @@ void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
                 parameters.embedded_configuration_finite_element_degree),
             spacedim);
       } else {
-        const double Cx = .5;
-        const double Cy = .5;
-        const double R = .3;
-        GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy}, R);
-        embedded_triangulation.refine_global(
-            parameters.embedded_initial_global_refinements); // 2
+        GridIn<1, 2> grid_in;
+        grid_in.attach_triangulation(embedded_triangulation);
+        std::ifstream input_file("../../grids/flower_interface.vtk");
+        grid_in.read_vtk(input_file);
 
         embedded_mapping = std::make_unique<MappingQ<dim, spacedim>>(1);
       }
