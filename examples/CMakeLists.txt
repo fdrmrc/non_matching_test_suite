@@ -13,7 +13,8 @@ set(CMAKE_INSTALL_RPATH "${CMAKE_INSTALL_PREFIX}/lib")
 
 set(APP_LIST 
     "
-    lm_1d2d  :  LagrangeMultiplier/1d2d/lagrange_multiplier.cc;
+    lm_1d2d_disk  :  LagrangeMultiplier/1d2d/lagrange_multiplier.cc;
+    lm_1d2d_flower:  LagrangeMultiplier/1d2d/lagrange_multiplier.cc;
     lm_2d3d  :  LagrangeMultiplier/2d3d/lagrange_multiplier.cc;")
     # nitsche_1d2d_smooth_disk  :  InterfacePenalisation/1d2d/smooth_disk.cc;
     # nitsche_1d2d_non_smooth_disk  :  InterfacePenalisation/1d2d/non_smooth_disk.cc;
