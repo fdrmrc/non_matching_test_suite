@@ -5,7 +5,7 @@ test -f docker/Dockerfile || echo \
 TAG=latest
 
 if [ -n "$1" ]; then 
-    TAG=$1
+    TAG=$(echo $1 | sed "s/\//-/g")
 fi
 echo "Will build and push ghcr.io/fdrmrc/non_matching_test_suite:$TAG"
 
