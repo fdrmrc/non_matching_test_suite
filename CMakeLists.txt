@@ -30,6 +30,9 @@ ENDIF()
 DEAL_II_INITIALIZE_CACHED_VARIABLES()
 PROJECT(non_matching_test_suite)
 
+# Make sure we don't get warnings for CGAL files.
+add_compile_options(-Wno-misleading-indentation)
+
 # Enable testing and descent into tests/ subdirectory:
 ENABLE_TESTING()
 INCLUDE_DIRECTORIES(${CMAKE_SOURCE_DIR}/include)
