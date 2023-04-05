@@ -30,4 +30,4 @@ jobs:
           password: "${{ secrets.GITHUB_TOKEN }}"
       - name: "Build the non_matching_test_suite Docker image"
         run: |
-          ./scripts/update_docker_image.sh ${{ env.GITHUB_REF_NAME }}
+          ./scripts/update_docker_image.sh ${{ github.ref_name}}
