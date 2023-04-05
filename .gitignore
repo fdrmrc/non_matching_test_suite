@@ -1,0 +1,8 @@
+build*
+compile_commands.json
+.DS_Store
+CMakeFiles
+CMakeCache.txt
+cmake_install.cmake
+build.ninja
+Makefile
