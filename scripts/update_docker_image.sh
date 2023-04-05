@@ -1,10 +1,10 @@
-#!/bin/sh
+#!/bin/bash
 test -f docker/Dockerfile || echo \
     "You must run this script from the top level directory of the repository."
 
 TAG=latest
 
-if [[ "$1" != "" ]]; then 
+if [ -n "$1" ]; then 
     TAG=$1
 fi
 echo "Will build and push ghcr.io/fdrmrc/non_matching_test_suite:$TAG"
