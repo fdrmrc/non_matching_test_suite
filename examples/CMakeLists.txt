@@ -20,12 +20,12 @@ set(APP_LIST
     nitsche_1d2d_non_smooth_disk  :  interface_penalisation/1d2d/non_smooth_disk.cc;
     nitsche_1d2d_smooth_flower  :  interface_penalisation/1d2d/smooth_flower.cc;
     nitsche_2d23_smooth_disk  :  interface_penalisation/2d3d/interface_penalisation_smooth_disk.cc;
-    nitsche_2d23_non_smooth_disk  :  interface_penalisation/2d3d/interface_penalisation_non_smooth_disk.cc;")
-    #  cufem_1d2d_smooth_disk  :  cut_fem/1d2d/smooth_disk.cc;
-    #  cufem_1d2d_non_smooth_disk  :  cut_fem/1d2d/non_smooth_disk.cc;
-    #  cufem_1d2d_smooth_flower  :  cut_fem/1d2d/smooth_flower.cc;
-    #  cufem_1d2d_sphere  :  cut_fem/2d3d/sphere.cc;
-    #  cufem_1d2d_cut_fem  :  cut_fem/cut_fem.cc;
+    nitsche_2d23_non_smooth_disk  :  interface_penalisation/2d3d/interface_penalisation_non_smooth_disk.cc;
+    cutfem_1d2d_smooth_disk  :  cut_fem/1d2d/smooth_disk.cc;
+    cutfem_1d2d_non_smooth_disk  :  cut_fem/1d2d/non_smooth_disk.cc;
+    cutfem_1d2d_smooth_flower  :  cut_fem/1d2d/smooth_flower.cc;")
+    #cutfem_2d_3d_smooth_sphere  :  cut_fem/2d3d/smooth_sphere.cc;
+    #cutfem_2d_3d_non_smooth_sphere  :  cut_fem/2d3d/non_smooth_sphere.cc;
 
 FOREACH(_build_type ${_d2_build_types})
   # Postfix to use everywhere
