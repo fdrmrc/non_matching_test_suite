@@ -39,6 +39,7 @@
 #include <deal.II/grid/grid_tools_cache.h>
 #include <deal.II/grid/tria.h>
 
+#include "coupling_utilities.h"
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
@@ -46,7 +47,6 @@
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-#include <deal.II/non_matching/coupling.h>
 
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
@@ -72,42 +72,10 @@ public:
 template <>
 double RightHandSide<3>::value(const Point<3> &p,
                                const unsigned int component) const {
-  // (void)p;
-  (void)component;
-  // return 0.;
-  return 12. * numbers::PI * numbers::PI *
-         (std::sin(2. * numbers::PI * p[0]) *
-          std::sin(2. * numbers::PI * p[1]) *
-          std::sin(2. * numbers::PI * p[2]));
-}
-
-template <>
-double RightHandSide<2>::value(const Point<2> &p,
-                               const unsigned int component) const {
-  // (void)p;
+  (void)p;
   (void)component;
   return 0.;
-  // return 8. * numbers::PI * numbers::PI *
-  //        (std::sin(2. * numbers::PI * p[0]) *
-  //         std::sin(2. * numbers::PI * p[1]));
 }
-
-// template <int dim>
-// class BoundaryCondition : public Function<dim>
-// {
-// public:
-//   virtual double value(const Point<dim>  &p,
-//                        const unsigned int component = 0) const override;
-// };
-
-// template <int dim>
-// double BoundaryCondition<dim>::value(const Point<dim>  &p,
-//                                      const unsigned int component) const
-// {
-//   (void)p;
-//   (void)component;
-//   return 1.5;
-// }
 
 template <int dim> class Solution : public Function<dim> {
 public:
@@ -131,61 +99,17 @@ double Solution<3>::value(const Point<3> &p,
 }
 
 template <>
-double Solution<2>::value(const Point<2> &p,
-                          const unsigned int component) const {
-  (void)component;
-  const double r = p.norm();
-  // return (r <= R) ? p[0] : ((R * R) / (r * r)) * p[0];
-  // return std::sin(2. * numbers::PI * p[0]) * std::sin(2. * numbers::PI *
-  // p[1]);
-}
-
-template <>
 Tensor<1, 3> Solution<3>::gradient(const Point<3> &p,
                                    const unsigned int component) const {
   (void)component;
-  // Tensor<1, 3>   gradient;
   Tensor<1, 3> grad;
   const Point<3> xc{Cx, Cy, Cz}; // center of the sphere
   const double r = (p - xc).norm();
 
-  // gradient[0] = std::cos(2. * numbers ::PI * p[0]) *
-  //               std::sin(2. * numbers::PI * p[1]) *
-  //               std::sin(2. * numbers::PI * p[2]);
-
-  // gradient[1] = std::sin(2. * numbers ::PI * p[0]) *
-  //               std::cos(2. * numbers::PI * p[1]) *
-  //               std::sin(2. * numbers::PI * p[2]);
-
-  // gradient[2] = std::sin(2. * numbers ::PI * p[0]) *
-  //               std::sin(2. * numbers::PI * p[1]) *
-  //               std::cos(2. * numbers::PI * p[2]);
   grad[0] = (r <= R) ? 0. : -(p[0] - Cx) / (std::pow(r * r, 1.5));
   grad[1] = (r <= R) ? 0. : -(p[1] - Cy) / (std::pow(r * r, 1.5));
   grad[2] = (r <= R) ? 0. : -(p[2] - Cz) / (std::pow(r * r, 1.5));
   return grad;
-  // return 2. * numbers::PI * gradient;
-}
-
-template <>
-Tensor<1, 2> Solution<2>::gradient(const Point<2> &p,
-                                   const unsigned int component) const {
-  (void)component;
-  const double r = p.norm();
-
-  Tensor<1, 2> gradient;
-  gradient[0] =
-      (r <= R) ? 1. : -(R * R * (p[0] * p[0] - p[1] * p[1])) / (r * r * r * r);
-
-  gradient[1] = (r <= R) ? 0. : -(2. * R * R * p[0] * p[1]) / (r * r * r * r);
-  return gradient;
-  // gradient[0] =
-  //   std::cos(2. * numbers ::PI * p[0]) * std::sin(2. * numbers::PI * p[1]);
-
-  // gradient[1] =
-  //   std::sin(2. * numbers ::PI * p[0]) * std::cos(2. * numbers::PI * p[1]);
-
-  // return 2. * numbers::PI * gradient;
 }
 
 template <int dim, int spacedim> class PoissonNitscheInterface {
@@ -240,32 +164,6 @@ private:
   PETScWrappers::MPI::Vector solution;
   PETScWrappers::MPI::Vector system_rhs;
 
-  /**
-   * The actual function to use as a forcing term.
-   */
-  // Function<spacedim> forcing_term;
-
-  /**
-   * This is the value we want to impose on the embedded domain.
-   *
-   */
-  // Functions<spacedim> embedded_value;
-
-  /**
-   * The coefficient in front of the Nitsche contribution to the stiffness
-   * matrix.
-   *
-   */
-  // Function<spacedim> nitsche_coefficient;
-
-  /**
-   * The actual function to use as a exact solution when computing the
-   * errors.
-   * */
-  // Function<spacedim> exact_solution;
-
-  // BoundaryConditions<spacedim> boundary_conditions;
-
   mutable TimerOutput timer;
 
   mutable ConvergenceTable convergence_table;
@@ -298,25 +196,10 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids() {
   GridGenerator::hyper_cube(space_triangulation, -1., 1.);
   GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy, Cz}, R);
 
-  if constexpr (dim == 3 && spacedim == 3) {
-    GridGenerator::hyper_cube(embedded_triangulation, 0.42, 0.66);
-    GridTools::rotate(Tensor<1, 3>({0, 1, 0}), numbers::PI_4,
-                      embedded_triangulation);
-  } else if constexpr (dim == 1 && spacedim == 2) {
-    GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy}, R);
-    embedded_triangulation.refine_global(5); // 5
-    space_triangulation.refine_global(2);    // 2
-  } else if constexpr (dim == 2 && spacedim == 2) {
-    GridGenerator::hyper_ball(embedded_triangulation, {}, R, false);
-    embedded_triangulation.refine_global(2);
-    space_triangulation.refine_global(1);
-  } else if constexpr (dim == 2 && spacedim == 3) {
-    // GridGenerator::hyper_cube(embedded_triangulation, -0.45, .35);
-    // embedded_triangulation.refine_global(3);
+  if constexpr (dim == 2 && spacedim == 3) {
     embedded_triangulation.refine_global(1);
-    // GridTools::rotate(Tensor<1, 3>({0, 1, 0}),
-    //                   numbers::PI_4,
-    //                   embedded_triangulation);
+  } else {
+    Assert(false, ExcMessage("Invalid dimensions."));
   }
   space_triangulation.refine_global(4);
   // We create unique pointers to cached triangulations. This This objects
@@ -344,9 +227,7 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
 
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
-      space_dh, 0,
-      /*Functions::ZeroFunction<spacedim>(),*/
-      Solution<spacedim>(),
+      space_dh, 0, Solution<spacedim>(),
       space_constraints); // zero Dirichlet on the boundary
 
   space_constraints.close();
@@ -354,9 +235,6 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
   DoFTools::make_sparsity_pattern(space_dh, dsp, space_constraints, false);
   sparsity_pattern.copy_from(dsp);
 
-  // system_matrix.reinit(sparsity_pattern);
-  // solution.reinit(space_dh.n_dofs());
-  // system_rhs.reinit(space_dh.n_dofs());
   const std::vector<IndexSet> locally_owned_dofs_per_proc =
       DoFTools::locally_owned_dofs_per_subdomain(space_dh);
   const IndexSet locally_owned_dofs =
@@ -460,21 +338,7 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
-  // // std::cout << "Solve system" << std::endl;
 
-  // PreconditionJacobi<SparseMatrix<double>> preconditioner;
-  // preconditioner.initialize(system_matrix);
-  // const auto A = linear_operator<Vector<double>>(system_matrix);
-
-  // ReductionControl         reduction_control(2000, 1.0e-18, 1.0e-10);
-  // SolverCG<Vector<double>> solver(reduction_control);
-
-  // const auto Ainv = inverse_operator(A, solver, preconditioner);
-  // solution        = Ainv * system_rhs;
-
-  // std::cout << "Solver converged in: " << reduction_control.last_step()
-  //           << " iterations" << std::endl;
-  // space_constraints.distribute(solution);
   PETScWrappers::PreconditionBoomerAMG preconditioner;
   PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
   data.symmetric_operator = true;
@@ -564,22 +428,12 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
                 << space_triangulation.n_global_active_cells() << std::endl;
       std::cout << "Cells embedded:"
                 << embedded_triangulation.n_global_active_cells() << std::endl;
-      // double sum = 0.;
-      // for (const auto &p : cells_and_quads)
-      //   {
-      //     auto quad = std::get<2>(p);
-      //     sum += std::accumulate(quad.get_weights().begin(),
-      //                            quad.get_weights().end(),
-      //                            0.);
-      //   }
-      // std::cout << "Area/Measure: " << sum << std::endl;
 
       setup_system();
       assemble_system();
       solve();
     }
 
-    // error_table.error_from_exact(space_dh, solution, exact_solution);
     output_results(cycle);
 
     if (cycle < n_refinement_cycles - 1) {
@@ -603,25 +457,13 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
 int main(int argc, char *argv[]) {
   try {
     {
-        // std::cout << "Solving in 1D/2D" << std::endl;
-        // PoissonNitscheInterface<1, 2> problem;
-        // problem.run();
-    } {
-        // std::cout << "Solving in 2D/2D" << std::endl;
-        // PoissonNitscheInterface<2> problem;
-        // problem.run();
-    } {
       std::cout << "Solving in 2D/3D" << std::endl;
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       PoissonNitscheInterface<2, 3> problem;
       problem.run();
+      return 0;
     }
-    {
-      // std::cout << "Solving in 3D/3D" << std::endl;
-      // PoissonNitscheInterface<3> problem;
-      // problem.run();
-    }
-    return 0;
+
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return 1;
