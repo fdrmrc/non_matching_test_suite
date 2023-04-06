@@ -291,6 +291,7 @@ double BoundaryValues<dim>::value(const Point<dim> &p,
     switch (dim) {
     case 2:
       return AnalyticalSolution<dim>().value(p);
+      break;
     default:
       Assert(false, ExcNotImplemented());
     }
