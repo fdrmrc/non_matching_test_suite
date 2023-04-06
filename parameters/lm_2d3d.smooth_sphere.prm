@@ -1,0 +1,58 @@
+# Listing of Parameters
+# ---------------------
+subsection Distributed Lagrange<2,3>
+  set Adjust grids                                       = true
+  set Apply space refinements steps near embedded domain = true
+  set Coupling strategy                                  = exact
+  set Embedded post refinement cycles                    = 1
+  set Finite element embedded degree                     = 0
+  set Finite element space degree                        = 1
+  set Number of embedded initial refinement cycles       = 1
+  set Number of refinement cycles                        = 4
+  set Number of space initial refinement cycles          = 4
+  set Space pre refinements cycles                       = 1
+  set Use embedded refinement                            = false
+  set Use space refinement                               = false
+
+
+
+  subsection Boundary condition
+   
+    set Function constants  = Cx=.5, Cy=.5, Cz=.5
+   
+    set Function expression = sin(2*pi*x)*sin(2*pi*y)*sin(2*pi*z)
+ 
+    set Variable names      = x,y,z,t
+  end
+
+  
+  subsection Right hand side
+  
+    set Function constants  = 
+  
+    set Function expression = 12*pi^2*sin(2*pi*x)*sin(2*pi*y)*sin(2*pi*z)
+  
+    set Variable names      = x,y,z,t
+  end
+
+  subsection Solution
+  
+    set Function constants  = Cx=.5, Cy=.5, Cz=.5, R = .3
+  
+    set Function expression = sin(2*pi*x)*sin(2*pi*y)*sin(2*pi*z)
+  
+    set Variable names      = x,y,z,t
+  end
+
+  subsection Solution multiplier
+    
+    set Function constants  = R=.3
+
+    set Function expression = 0.
+
+    set Variable names      = x,y,z,t
+  end
+
+end
+
+
