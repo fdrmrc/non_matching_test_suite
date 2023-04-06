@@ -246,19 +246,30 @@ double DiscreteLevelSet<dim, RTree, Tester>::value(
       // mesh
       distances.push_back(std::sqrt(
           CGAL::to_double(CGAL::squared_distance(cgal_point, cgal_plane))));
-
-      const auto &min_dist =
-          *std::min_element(distances.begin(), distances.end());
-
-      return *is_in_tester(
-                 CGALWrappers::dealii_point_to_cgal_point<CGALPoint3, 3>(p))
-                 ? -min_dist
-                 : +min_dist;
     }
+    const auto &min_dist =
+        *std::min_element(distances.begin(), distances.end());
+
+    // #ifdef DEBUG
+    //       auto test = is_in_tester(
+    //           CGALWrappers::dealii_point_to_cgal_point<CGALPoint3, 3>(p));
+    //       if (test) {
+    //         std::cout << "Point inside=" << test << std::endl;
+    //         return -min_dist;
+    //       } else {
+    //         std::cout << "Point outside=" << test << std::endl;
+    //         return min_dist;
+    //       }
+    // #elif
+    return is_in_tester(
+               CGALWrappers::dealii_point_to_cgal_point<CGALPoint3, 3>(p))
+               ? -min_dist
+               : min_dist;
+    // #endif
   } else {
     Assert(false, ExcNotImplemented());
+    return numbers::invalid_unsigned_int;
   }
-  return -1.;
 }
 
 } // namespace NonMatchingUtilities
