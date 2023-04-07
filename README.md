@@ -1,18 +1,16 @@
 # Non Matching Test Suite
 
-Collection of C++ finite element programs testing different coupling strategies with Non Matching techniques using composite quadrature rules on mesh intersections. This is done by integrating the C++ library `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, all examples require a `deal.II` version greater or equal to `9.4.2`, a C++17-compliant compiler and a `CGAL` version greater than 5.5.2 installed.
+C++ application consisting of finite element programs testing different coupling strategies with via non matching techniques such as using quadrature rules on mesh intersections. Part of this work builds on top of the integration of the C++ library `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, a `deal.II` version greater or equal than `9.4.2`, and `CGAL` versions greater than 5.5.2 are required, along with a C++17 compliant compiler.
 
-![Screenshot](grids/Flower_interface.png)
+![Screenshot](grids/mesh_3d.png)
+
+![Screenshot](grids/iso_contour_3D_ns.png)
 
 ## How to compile and run
-We provide parameter files (.prm) for test cases, allowing the user to change rhs, boundary conditions, number of refinement cycles and mesh related parameters. To compile and run, move into the desired folder (e.g. `/LagrangeMultiplier/1d2d`).
 
-- Set the `DEAL_II_DIR` to the directory where you built the branch above. Alternatively, you can pass it as one of the CMake flags
+- `mkdir build && cd build`
+- `cmake .` , or `cmake -DDEAL_II_DIR=/your/local/path/to/deal` 
+- `make`, or `make -j N`, begin `N` the number of make jobs you may want to ask.
 
-- `cmake .` , or `cmake -DDEAL_II_DIR=/your/local/path/to/deal` if you want to pass it as a flag
-
-- Compile with `make ` (or `make -jN`)
-
-- Run `./lagrange_multiplier disk_parameters.prm`
 
 ## Using Docker image [TODO]
