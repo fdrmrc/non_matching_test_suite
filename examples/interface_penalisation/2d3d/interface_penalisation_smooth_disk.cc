@@ -124,6 +124,8 @@ public:
 private:
   void generate_grids();
 
+  void adjust_grids();
+
   void setup_system();
 
   void assemble_system();
@@ -214,6 +216,112 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids() {
       space_triangulation);
   embedded_cache =
       std::make_unique<GridTools::Cache<dim, spacedim>>(embedded_triangulation);
+}
+
+template <int dim, int spacedim>
+void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
+  // Adjust grid diameters to satisfy ratio suggested by the theory.
+
+  std::cout << "Adjusting the grids..." << std::endl;
+  namespace bgi = boost::geometry::index;
+
+  auto refine = [&]() {
+    bool done = false;
+
+    double min_embedded = 1e10;
+    double max_embedded = 0;
+    double min_space = 1e10;
+    double max_space = 0;
+
+    while (done == false) {
+      // Bounding boxes of the space grid
+      const auto &tree =
+          space_cache->get_locally_owned_cell_bounding_boxes_rtree();
+
+      // Bounding boxes of the embedded grid
+      const auto &embedded_tree =
+          embedded_cache->get_cell_bounding_boxes_rtree();
+
+      // Let's check all cells whose bounding box contains an embedded
+      // bounding box
+      done = true;
+
+      const bool use_space = false;
+
+      const bool use_embedded = false;
+
+      AssertThrow(!(use_embedded && use_space),
+                  ExcMessage("You can't refine both the embedded and "
+                             "the space grid at the same time."));
+
+      for (const auto &[embedded_box, embedded_cell] : embedded_tree) {
+        const auto &[p1, p2] = embedded_box.get_boundary_points();
+        const auto diameter = p1.distance(p2);
+        min_embedded = std::min(min_embedded, diameter);
+        max_embedded = std::max(max_embedded, diameter);
+
+        for (const auto &[space_box, space_cell] :
+             tree | bgi::adaptors::queried(bgi::intersects(embedded_box))) {
+          const auto &[sp1, sp2] = space_box.get_boundary_points();
+          const auto space_diameter = sp1.distance(sp2);
+          min_space = std::min(min_space, space_diameter);
+          max_space = std::max(max_space, space_diameter);
+
+          if (use_embedded && space_diameter < diameter) {
+            embedded_cell->set_refine_flag();
+            done = false;
+          }
+          if (use_space && diameter < space_diameter) {
+            space_cell->set_refine_flag();
+            done = false;
+          }
+        }
+      }
+      if (done == false) {
+        if (use_embedded) {
+          // Compute again the embedded displacement grid
+          embedded_triangulation.execute_coarsening_and_refinement();
+        }
+        if (use_space) {
+          // Compute again the embedded displacement grid
+          space_triangulation.execute_coarsening_and_refinement();
+        }
+      }
+    }
+    return std::make_tuple(min_space, max_space, min_embedded, max_embedded);
+  };
+
+  // Do the refinement loop once, to make sure we satisfy our criterions
+  refine();
+
+  // Pre refine the space grid according to the delta refinement
+  const bool apply_delta_refinements = true;
+  unsigned int space_pre_refinement_cycles = 1;
+  if (apply_delta_refinements)
+    for (unsigned int i = 0; i < space_pre_refinement_cycles; ++i) {
+      const auto &tree =
+          space_cache->get_locally_owned_cell_bounding_boxes_rtree();
+
+      const auto &embedded_tree =
+          embedded_cache->get_cell_bounding_boxes_rtree();
+
+      for (const auto &[embedded_box, embedded_cell] : embedded_tree)
+        for (const auto &[space_box, space_cell] :
+             tree | bgi::adaptors::queried(bgi::intersects(embedded_box)))
+          space_cell->set_refine_flag();
+      space_triangulation.execute_coarsening_and_refinement();
+
+      // Make sure again we satisfy our criterion after the space refinement
+      refine();
+    }
+
+  // Check once again we satisfy our criterion, and record min/max
+  const auto [sm, sM, em, eM] = refine();
+
+  std::cout << "Space local min/max diameters   : " << sm << "/" << sM
+            << std::endl
+            << "Embedded space min/max diameters: " << em << "/" << eM
+            << std::endl;
 }
 
 template <int dim, int spacedim>
@@ -388,7 +496,8 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh.n_dofs());
+    convergence_table.add_value("dofs", space_dh.n_dofs() -
+                                            space_constraints.n_constraints());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
   }
@@ -411,6 +520,9 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
 
+    if (cycle == 0u) {
+      adjust_grids();
+    }
     // Compute all the things we need to assemble the Nitsche's
     // contributions, namely the two cached triangulations and a degree to
     // integrate over the intersections.
@@ -437,7 +549,6 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       solve();
     }
 
-    // error_table.error_from_exact(space_dh, solution, exact_solution);
     output_results(cycle);
 
     if (cycle < n_refinement_cycles - 1) {
