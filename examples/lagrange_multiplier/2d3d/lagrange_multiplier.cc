@@ -701,11 +701,12 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
   // ReductionControl reduction_control(2000, 1.0e-12, 1.0e-10);
 
   //
-  ReductionControl reduction_control(solution.size(), 1.0e-10, 1.0e-2);
+  ReductionControl reduction_control(solution.size(), 1.0e-11, 1.0e-2);
   // SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
-  SolverGMRES<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
+  SolverGMRES<TrilinosWrappers::MPI::Vector> solver(reduction_control);
+  // SolverMinRes<TrilinosWrappers::MPI::Vector> solver(reduction_control);
 
-  auto S_inv = inverse_operator(S, solver_cg, preconditioner);
+  auto S_inv = inverse_operator(S, solver, preconditioner);
 
   lambda = S_inv * (C * K_inv * space_rhs - embedded_rhs);
   solution = K_inv * (space_rhs - Ct * lambda);
@@ -765,7 +766,8 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh->n_dofs());
+    convergence_table.add_value("dofs", space_dh->n_dofs() -
+                                            space_constraints.n_constraints());
     convergence_table.add_value("dofs_emb", embedded_dh->n_dofs());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
