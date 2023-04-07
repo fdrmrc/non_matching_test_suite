@@ -435,8 +435,8 @@ compute_intersection_hexa_line(const ArrayView<const Point<3>> &hexa,
 }
 
 std::vector<std::array<Point<3>, 3>>
-compute_intersection_hexa_quad(const ArrayView<const Point<3>> &vertices0,
-                               const ArrayView<const Point<3>> &vertices1,
+compute_intersection_hexa_quad(const ArrayView<const Point<3>> &hexa,
+                               const ArrayView<const Point<3>> &quad,
                                const double tol) {
 
   AssertDimension(hexa.size(), 8);
@@ -444,12 +444,12 @@ compute_intersection_hexa_quad(const ArrayView<const Point<3>> &vertices0,
 
   std::array<CGALPoint3_exact, 8> pts_hex;
   std::array<CGALPoint3_exact, 4> pts_quad;
-  std::transform(vertices0.begin(), vertices0.end(), pts_hex.begin(),
+  std::transform(hexa.begin(), hexa.end(), pts_hex.begin(),
                  [&](const Point<3> &p) {
                    return dealii_point_to_cgal_point<CGALPoint3_exact>(p);
                  });
 
-  std::transform(vertices1.begin(), vertices1.end(), pts_quad.begin(),
+  std::transform(quad.begin(), quad.end(), pts_quad.begin(),
                  [&](const Point<3> &p) {
                    return dealii_point_to_cgal_point<CGALPoint3_exact>(p);
                  });
