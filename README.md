@@ -1,10 +1,8 @@
-# Non Matching Test Suite
+# Non matching test suite
 
-C++ application consisting of finite element programs testing different coupling strategies with via non matching techniques such as using quadrature rules on mesh intersections. Part of this work builds on top of the integration of the C++ library `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, a `deal.II` version greater or equal than `9.4.2`, and `CGAL` versions greater than 5.5.2 are required, along with a C++17 compliant compiler.
+C++ application showing different coupling strategies via non matching finite element techniques such as robust quadrature rules on mesh intersections in co-dimensione one configurations. Numerical experiments are part of the work presented in `[add_final_title and link]`. 
+This builds on top of the integration of the `CGAL` (https://www.cgal.org/) into `deal.II` (www.dealii.org). Currently, a `deal.II` version greater or equal than `9.4.2` and `CGAL` versions greater than 5.5.2 are required, along with a C++17 compliant compiler.
 
-![Screenshot](grids/mesh_3d.png)
-
-![Screenshot](grids/iso_contour_3D_ns.png)
 
 ## How to compile and run
 
@@ -14,3 +12,7 @@ C++ application consisting of finite element programs testing different coupling
 
 
 ## Using Docker image [TODO]
+
+![Screenshot](grids/mesh_3d.png)
+
+![Screenshot](grids/iso_contour_3D_ns.png)
