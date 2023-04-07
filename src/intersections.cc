@@ -49,6 +49,7 @@
 #include <CGAL/Triangulation_3.h>
 #include <CGAL/Triangulation_face_base_with_id_2.h>
 #include <CGAL/Triangulation_face_base_with_info_2.h>
+#include <algorithm>
 #include <deal.II/cgal/utilities.h>
 #include <fstream>
 #include <type_traits>
@@ -79,6 +80,8 @@ using CGALTetra_exact = K_exact::Tetrahedron_3;
 using Triangulation2 = CGAL::Triangulation_2<K>;
 using Triangulation3 = CGAL::Triangulation_3<K>;
 using Triangulation3_exact = CGAL::Triangulation_3<K_exact>;
+using Gt = CGAL::Projection_traits_xy_3<K_exact>;
+using Delaunay = CGAL::Delaunay_triangulation_2<Gt>;
 using Triangulation3_inexact = CGAL::Triangulation_3<K_inexact>;
 
 struct FaceInfo2 {
@@ -432,8 +435,8 @@ compute_intersection_hexa_line(const ArrayView<const Point<3>> &hexa,
 }
 
 std::vector<std::array<Point<3>, 3>>
-compute_intersection_hexa_quad(const ArrayView<const Point<3>> &hexa,
-                               const ArrayView<const Point<3>> &quad,
+compute_intersection_hexa_quad(const ArrayView<const Point<3>> &vertices0,
+                               const ArrayView<const Point<3>> &vertices1,
                                const double tol) {
 
   AssertDimension(hexa.size(), 8);
@@ -441,31 +444,36 @@ compute_intersection_hexa_quad(const ArrayView<const Point<3>> &hexa,
 
   std::array<CGALPoint3_exact, 8> pts_hex;
   std::array<CGALPoint3_exact, 4> pts_quad;
+  std::transform(vertices0.begin(), vertices0.end(), pts_hex.begin(),
+                 [&](const Point<3> &p) {
+                   return dealii_point_to_cgal_point<CGALPoint3_exact>(p);
+                 });
 
-  std::transform(
-      hexa.begin(), hexa.end(), pts_hex.begin(),
-      &CGALWrappers::dealii_point_to_cgal_point<CGALPoint3_exact, 3>);
-
-  std::transform(
-      quad.begin(), quad.end(), pts_quad.begin(),
-      &CGALWrappers::dealii_point_to_cgal_point<CGALPoint3_exact, 3>);
+  std::transform(vertices1.begin(), vertices1.end(), pts_quad.begin(),
+                 [&](const Point<3> &p) {
+                   return dealii_point_to_cgal_point<CGALPoint3_exact>(p);
+                 });
 
   // Subdivide hex into tetrahedrons
   std::vector<std::array<Point<3>, 3>> vertices;
-  Triangulation3_exact triangulation_hexa;
-  triangulation_hexa.insert(pts_hex.begin(), pts_hex.end());
+  Triangulation3_exact tria;
+  tria.insert(pts_hex.begin(), pts_hex.end());
 
   // Subdivide quad into triangles
-  Triangulation3_exact triangulation_quad;
-  triangulation_quad.insert(pts_quad.begin(), pts_quad.end());
 
-  for (const auto &c : triangulation_hexa.finite_cell_handles()) {
-    const auto &tet = triangulation_hexa.tetrahedron(c);
+  Delaunay tria_quad(pts_quad.begin(), pts_quad.end());
 
-    for (const auto &f : triangulation_quad.finite_facets()) {
-      if (CGAL::do_intersect(tet, triangulation_quad.triangle(f))) {
-        const auto intersection =
-            CGAL::intersection(triangulation_quad.triangle(f), tet);
+  for (const auto &c : tria.finite_cell_handles()) {
+    const auto &tet = tria.tetrahedron(c);
+
+    for (const auto f : tria_quad.finite_face_handles()) {
+
+      CGALTriangle3_exact tria_test(
+          f->vertex(0)->point(), f->vertex(1)->point(), f->vertex(2)->point());
+
+      if (CGAL::do_intersect(tet,
+                             /*tria_quad.triangle(f)*/ tria_test)) {
+        const auto intersection = CGAL::intersection(tria_test, tet);
 
         if (const CGALTriangle3_exact *t =
                 boost::get<CGALTriangle3_exact>(&*intersection)) {
@@ -478,17 +486,19 @@ compute_intersection_hexa_quad(const ArrayView<const Point<3>> &hexa,
 
         if (const std::vector<CGALPoint3_exact> *vps =
                 boost::get<std::vector<CGALPoint3_exact>>(&*intersection)) {
-          Triangulation3_exact tria_inter;
-          tria_inter.insert(vps->begin(), vps->end());
+          Delaunay tria_inter(vps->begin(), vps->end());
+          for (auto it = tria_inter.finite_faces_begin();
+               it != tria_inter.finite_faces_end(); ++it) {
+            CGALTriangle3_exact tria_testt(it->vertex(0)->point(),
+                                           it->vertex(1)->point(),
+                                           it->vertex(2)->point());
 
-          for (auto it = tria_inter.finite_facets_begin();
-               it != tria_inter.finite_facets_end(); ++it) {
-            const auto triangle = tria_inter.triangle(*it);
-            if (CGAL::to_double(triangle.squared_area()) > tol * tol) {
+            if (CGAL::to_double(tria_testt.squared_area()) > tol * tol) {
+
               std::array<Point<3>, 3> verts = {
-                  {CGALWrappers::cgal_point_to_dealii_point<3>(triangle[0]),
-                   CGALWrappers::cgal_point_to_dealii_point<3>(triangle[1]),
-                   CGALWrappers::cgal_point_to_dealii_point<3>(triangle[2])}};
+                  {CGALWrappers::cgal_point_to_dealii_point<3>(tria_testt[0]),
+                   CGALWrappers::cgal_point_to_dealii_point<3>(tria_testt[1]),
+                   CGALWrappers::cgal_point_to_dealii_point<3>(tria_testt[2])}};
 
               vertices.push_back(verts);
             }
