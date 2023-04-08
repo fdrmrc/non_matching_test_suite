@@ -25,11 +25,8 @@
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/mapping_fe_field.h>
 #include <deal.II/grid/grid_in.h>
+#include <deal.II/lac/generic_linear_algebra.h>
 #include <deal.II/lac/linear_operator_tools.h>
-#include <deal.II/lac/petsc_precondition.h>
-#include <deal.II/lac/petsc_solver.h>
-#include <deal.II/lac/petsc_sparse_matrix.h>
-#include <deal.II/lac/petsc_vector.h>
 #include <deal.II/numerics/error_estimator.h>
 
 #include <deal.II/dofs/dof_handler.h>
@@ -184,9 +181,9 @@ private:
   AffineConstraints<double> space_constraints;
   SparsityPattern sparsity_pattern;
 
-  PETScWrappers::MPI::SparseMatrix system_matrix;
-  PETScWrappers::MPI::Vector solution;
-  PETScWrappers::MPI::Vector system_rhs;
+  LinearAlgebraTrilinos::MPI::SparseMatrix system_matrix;
+  LinearAlgebraTrilinos::MPI::Vector solution;
+  LinearAlgebraTrilinos::MPI::Vector system_rhs;
 
   mutable TimerOutput timer;
 
@@ -360,8 +357,7 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
 
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
-      space_dh, 0,
-      Solution<spacedim>(),
+      space_dh, 0, Solution<spacedim>(),
       space_constraints); // zero Dirichlet on the boundary
 
   space_constraints.close();
@@ -422,7 +418,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
                                                      local_dof_indices,
                                                      system_matrix, system_rhs);
       }
-
     }
   }
 
@@ -434,7 +429,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
     DoFHandler<dim, spacedim> embedded_dh(embedded_triangulation);
     embedded_dh.distribute_dofs(embedded_fe);
     std::cout << "Embedded DoFs: " << embedded_dh.n_dofs() << std::endl;
-
 
     // Add Nitsche's contribution to the system matrix.
     NonMatching::assemble_nitsche_with_exact_intersections<spacedim, dim,
@@ -465,12 +459,10 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
-  PETScWrappers::PreconditionBoomerAMG preconditioner;
-  PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
-  data.symmetric_operator = true;
-  preconditioner.initialize(system_matrix, data);
+  LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
+  preconditioner.initialize(system_matrix);
   SolverControl solver_control(solution.size(), 1e-8);
-  PETScWrappers::SolverCG solver(solver_control);
+  LinearAlgebraTrilinos::SolverCG solver(solver_control);
   solver.solve(system_matrix, solution, system_rhs, preconditioner);
 
   std::cout << "Solver converged in: " << solver_control.last_step()
@@ -487,13 +479,15 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
   TimerOutput::Scope timer_section(timer, "Output results");
   // std::cout << "Output results" << std::endl;
   data_out.clear();
-  data_out.attach_dof_handler(space_dh);
-  data_out.add_data_vector(solution, "solution");
-  data_out.build_patches();
-  std::ofstream output("solution_nitsche" + std::to_string(dim) +
-                       std::to_string(spacedim) + std::to_string(cycle) +
-                       ".vtu");
-  data_out.write_vtu(output);
+  if (cycle < 3) {
+    data_out.attach_dof_handler(space_dh);
+    data_out.add_data_vector(solution, "solution");
+    data_out.build_patches();
+    std::ofstream output("solution_nitsche" + std::to_string(dim) +
+                         std::to_string(spacedim) + std::to_string(cycle) +
+                         ".vtu");
+    data_out.write_vtu(output);
+  }
   {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
     VectorTools::integrate_difference(
@@ -538,7 +532,6 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
     generate_grids(cycle);
     if (cycle == 0)
       adjust_grids();
-
 
     // Compute all the things we need to assemble the Nitsche's
     // contributions, namely the two cached triangulations and a degree to

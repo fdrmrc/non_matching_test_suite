@@ -30,10 +30,7 @@
 #include <deal.II/distributed/shared_tria.h>
 #include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_out.h>
-#include <deal.II/lac/petsc_precondition.h>
-#include <deal.II/lac/petsc_solver.h>
-#include <deal.II/lac/petsc_sparse_matrix.h>
-#include <deal.II/lac/petsc_vector.h>
+#include <deal.II/lac/generic_linear_algebra.h>
 
 #include <deal.II/dofs/dof_tools.h>
 
@@ -147,9 +144,9 @@ private:
   NonMatching::MeshClassifier<dim> mesh_classifier;
 
   SparsityPattern sparsity_pattern;
-  PETScWrappers::MPI::SparseMatrix stiffness_matrix;
-  PETScWrappers::MPI::Vector rhs;
-  PETScWrappers::MPI::Vector solution;
+  LinearAlgebraTrilinos::MPI::SparseMatrix stiffness_matrix;
+  LinearAlgebraTrilinos::MPI::Vector rhs;
+  LinearAlgebraTrilinos::MPI::Vector solution;
   MPI_Comm mpi_communicator;
 
   const unsigned int n_mpi_processes;
@@ -885,12 +882,10 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
 template <int dim> void LaplaceSolver<dim>::solve() {
   std::cout << "Solving system" << std::endl;
 
-  PETScWrappers::PreconditionBoomerAMG preconditioner;
-  PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
-  data.symmetric_operator = true;
-  preconditioner.initialize(stiffness_matrix, data);
+  LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
+  preconditioner.initialize(stiffness_matrix);
   SolverControl solver_control(solution.size(), 1e-12);
-  PETScWrappers::SolverCG solver(solver_control);
+  LinearAlgebraTrilinos::SolverCG solver(solver_control);
   solver.solve(stiffness_matrix, solution, rhs, preconditioner);
   std::cout << "Solved in " << solver_control.last_step() << " iterations."
             << std::endl;
