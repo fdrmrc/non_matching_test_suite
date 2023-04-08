@@ -9,10 +9,10 @@ subsection Distributed Lagrange<1,2>
   set Finite element embedded degree                     = 0
   set Finite element space degree                        = 1
   
-  set Number of embedded initial refinement cycles       = 5
+  set Number of embedded initial refinement cycles       = 3
   set Number of refinement cycles                        = 5
   set Number of space initial refinement cycles          = 4
-  set Space pre refinements cycles                       = 2
+  set Space pre refinements cycles                       = 4
   set Use embedded refinement                            = false
   set Use space refinement                               = false
 
