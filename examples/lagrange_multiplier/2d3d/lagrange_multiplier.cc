@@ -64,7 +64,10 @@
 #include <fstream>
 #include <iostream>
 
-const double R = .3;
+static constexpr double R = .3;
+static constexpr double Cx = .5;
+static constexpr double Cy = .5;
+static constexpr double Cz = .5;
 
 using namespace dealii;
 
@@ -209,8 +212,6 @@ PoissonDLM<dim, spacedim>::Parameters::Parameters()
   add_parameter("Apply space refinements steps near embedded domain",
                 apply_delta_refinements);
 
-  // add_parameter("Number of refinements steps", delta_refinement_cycles);
-
   add_parameter("Use space refinement", use_space);
 
   add_parameter("Use embedded refinement", use_embedded);
@@ -250,37 +251,18 @@ PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
 
 template <int dim, int spacedim>
 void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
-  // TimerOutput::Scope timer_section(timer, "Generate grids");
   if (cycle == 0) {
     GridGenerator::hyper_cube(space_triangulation, -1., 1.);
 
-    if constexpr (dim == 3 && spacedim == 3) {
-      GridGenerator::hyper_cube(embedded_triangulation, 0.42, 0.66);
-      GridTools::rotate(Tensor<1, 3>({0, 1, 0}), numbers::PI_4,
-                        embedded_triangulation);
-    } else if constexpr (dim == 1 && spacedim == 2) {
-      GridGenerator::hyper_sphere(embedded_triangulation, {}, R);
-      space_triangulation.refine_global(
-          parameters.space_initial_global_refinements); // 4
-      embedded_triangulation.refine_global(
-          parameters.embedded_initial_global_refinements); // 2
-    } else if constexpr (dim == 2 && spacedim == 2) {
-      embedded_triangulation.refine_global(
-          parameters.embedded_initial_global_refinements);
-      space_triangulation.refine_global(
-          parameters.space_initial_global_refinements);
-    } else if constexpr (dim == 2 && spacedim == 3) {
-      // GridGenerator::hyper_cube(embedded_triangulation, -0.45, 0.45);
-      // GridGenerator::hyper_cube(embedded_triangulation, -0.42, 0.56);
-      const double Cx = .5;
-      const double Cy = .5;
-      const double Cz = .5;
+    if constexpr (dim == 2 && spacedim == 3) {
+
       GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy, Cz}, R);
-      // GridGenerator::hyper_cross(embedded_triangulation, {0, 0, 1, 0});
       space_triangulation.refine_global(
           parameters.space_initial_global_refinements); // 4
       embedded_triangulation.refine_global(
           parameters.embedded_initial_global_refinements); // 2
+    } else {
+      Assert(false, ExcMessage("Invalid dimensions."));
     }
   }
 
@@ -455,9 +437,6 @@ void PoissonDLM<dim, spacedim>::setup_space_dofs() {
 
   solution.reinit(locally_owned_dofs, mpi_communicator);
   space_rhs.reinit(locally_owned_dofs, mpi_communicator);
-  // stiffness_matrix.reinit(stiffness_sparsity_pattern);
-  // solution.reinit(space_dh->n_dofs());
-  // space_rhs.reinit(space_dh->n_dofs());
 
   // Mass matrix for the preconditioner
   DynamicSparsityPattern mass_dsp(embedded_dh->n_dofs(), embedded_dh->n_dofs());
@@ -469,7 +448,6 @@ void PoissonDLM<dim, spacedim>::setup_space_dofs() {
       locally_owned_dofs_per_proc_emb[this_mpi_process];
   mass_matrix.reinit(locally_owned_dofs_emb, locally_owned_dofs_emb, mass_dsp,
                      mpi_communicator);
-  // mass_matrix.reinit(mass_sparsity_pattern);
 }
 
 template <int dim, int spacedim>
@@ -488,9 +466,6 @@ void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
 
   embedded_rhs.reinit(locally_owned_dofs, mpi_communicator);
   lambda.reinit(locally_owned_dofs, mpi_communicator);
-
-  // embedded_rhs.reinit(embedded_dh->n_dofs());
-  // lambda.reinit(embedded_dh->n_dofs());
 }
 
 template <int dim, int spacedim>
@@ -528,7 +503,6 @@ void PoissonDLM<dim, spacedim>::setup_coupling() {
 
   coupling_matrix.reinit(locally_owned_dofs_space, locally_owned_dofs_emb,
                          coupling_sparsity_pattern, mpi_communicator);
-  // coupling_matrix.reinit(coupling_sparsity_pattern);
 }
 
 template <int dim, int spacedim>
@@ -635,47 +609,6 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
 
 // We solve the resulting system as done in the classical Poisson example.
 template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
-  // // TimerOutput::Scope timer_section(timer, "Solve system");
-  // std::cout << "Solve system" << std::endl;
-
-  // auto K = linear_operator(stiffness_matrix);
-
-  // // SparseDirectUMFPACK K_inv_umfpack;
-  // // K_inv_umfpack.initialize(stiffness_matrix);
-  // // auto K_inv = linear_operator(K, K_inv_umfpack);
-
-  // ReductionControl         reduction_control_K(200, 1.0e-12, 1.0e-2);
-  // SolverCG<Vector<double>> solver_cg_K(reduction_control_K);
-  // auto                     K_inv = inverse_operator(K, solver_cg_K);
-  // std::cout << "Got the inverse FOR CYCLE = " << cycle << std::endl;
-
-  // auto Ct = linear_operator(coupling_matrix);
-  // auto M  = linear_operator(mass_matrix);
-  // auto C  = transpose_operator(Ct);
-
-  // auto S = C * K_inv * Ct;
-  // // ReductionControl reduction_control(2000, 1.0e-12, 1.0e-10);
-  // ReductionControl reduction_control(2000, 1.0e-6, 1.0e-2, true);
-  // // SolverCG<Vector<double>> solver_cg(reduction_control);
-  // SolverGMRES<Vector<double>> solver_cg(reduction_control);
-
-  // auto preconditioner = C * K * Ct + M;
-
-  // auto S_inv = inverse_operator(S, solver_cg, preconditioner);
-  // {
-  //   Vector<double> lambda0 = C * K_inv * space_rhs - embedded_rhs;
-  //   std::cout << "Norm first term = " << lambda0.norm_sqr() << std::endl;
-  // }
-
-  // lambda   = S_inv * (C * K_inv * space_rhs - embedded_rhs);
-  // solution = K_inv * (space_rhs - Ct * lambda);
-  // std::cout << "Norm of the multiplier: " << lambda.norm_sqr() << std::endl;
-
-  // std::cout << "Solved in : " << reduction_control.last_step() <<
-  // "iterations."
-  //           << std::endl;
-
-  // space_constraints.distribute(solution);
 
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
@@ -685,15 +618,12 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
 
   auto K = linear_operator<TrilinosWrappers::MPI::Vector>(stiffness_matrix);
   ReductionControl reduction_control_K(2000, 1.0e-14);
-  // ReductionControl reduction_control_K(200, 1.0e-14, 1.0e-2);
   SolverCG<TrilinosWrappers::MPI::Vector> solver_cg_K(reduction_control_K);
   auto K_inv = inverse_operator(K, solver_cg_K, prec_stiffness);
 
   auto M = linear_operator<TrilinosWrappers::MPI::Vector>(mass_matrix);
   auto Ct = linear_operator<TrilinosWrappers::MPI::Vector>(coupling_matrix);
   auto C = transpose_operator<TrilinosWrappers::MPI::Vector>(Ct);
-
-  // auto K_inv = linear_operator<TrilinosWrappers::MPI::Vector>(K, K_inv);
 
   auto preconditioner = C * K * Ct + M;
 
@@ -702,7 +632,6 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
 
   //
   ReductionControl reduction_control(solution.size(), 1.0e-11, 1.0e-2);
-  // SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
   SolverGMRES<TrilinosWrappers::MPI::Vector> solver(reduction_control);
   // SolverMinRes<TrilinosWrappers::MPI::Vector> solver(reduction_control);
 
@@ -728,7 +657,6 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
 // Finally, we output the solution living in the embedding space
 template <int dim, int spacedim>
 void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
-  // TimerOutput::Scope timer_section(timer, "Output results");
   std::cout << "Output results" << std::endl;
 
   if (cycle < 2) {
@@ -789,11 +717,6 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
       std::cout << "H^1/2 error multiplier: " << std::scientific;
       std::cout << H12error_multiplier << std::endl;
       convergence_table.add_value("H12_multiplier", H12error_multiplier);
-
-      // convergence_table.add_value("cells_embedded",
-      //                             embedded_triangulation.n_active_cells());
-      // convergence_table.add_value("dofs_embedded", embedded_dh->n_dofs());
-      // convergence_table.add_value("L2_multiplier", L2_error_multiplier);
     }
   }
 }

@@ -172,7 +172,7 @@ private:
 
   /**
    * The penalty parameter which multiplies Nitsche's terms. In this program
-   * it is defaulted to 100.0
+   * it is defaulted to 10.0
    */
 
   double penalty = 10.0;
@@ -416,24 +416,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
         space_dh, cells_and_quads, system_rhs, space_constraints,
         MappingQ1<spacedim>(), Solution<spacedim>(),
         Functions::ConstantFunction<spacedim>(2.0), penalty);
-
-    // FE_Q<dim, spacedim>       embedded_fe(1);
-    // DoFHandler<dim, spacedim> embedded_dh(embedded_triangulation);
-    // embedded_dh.distribute_dofs(embedded_fe);
-
-    // NonMatching::create_coupling_mass_matrix_nitsche(*space_cache,
-    //                                                  space_dh,
-    //                                                  embedded_dh,
-    //                                                  QGauss<dim>(
-    //                                                    2 * space_fe.degree +
-    //                                                    1),
-    //                                                  system_matrix,
-    //                                                  system_rhs,
-    //                                                  Solution<spacedim>(),
-    //                                                  mapping,
-    //                                                  MappingQ1<dim,
-    //                                                  spacedim>(),
-    //                                                  space_constraints);
 
     system_matrix.compress(VectorOperation::add);
     system_rhs.compress(VectorOperation::add);

@@ -175,32 +175,6 @@ private:
   PETScWrappers::MPI::Vector solution;
   PETScWrappers::MPI::Vector system_rhs;
 
-  /**
-   * The actual function to use as a forcing term.
-   */
-  // Function<spacedim> forcing_term;
-
-  /**
-   * This is the value we want to impose on the embedded domain.
-   *
-   */
-  // Functions<spacedim> embedded_value;
-
-  /**
-   * The coefficient in front of the Nitsche contribution to the stiffness
-   * matrix.
-   *
-   */
-  // Function<spacedim> nitsche_coefficient;
-
-  /**
-   * The actual function to use as a exact solution when computing the
-   * errors.
-   * */
-  // Function<spacedim> exact_solution;
-
-  // BoundaryConditions<spacedim> boundary_conditions;
-
   mutable TimerOutput timer;
 
   mutable ConvergenceTable convergence_table;
@@ -209,7 +183,7 @@ private:
 
   /**
    * The penalty parameter which multiplies Nitsche's terms. In this program
-   * it is defaulted to 100.0
+   * it is defaulted to 10.0
    */
 
   double penalty = 10.0;
@@ -431,8 +405,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
           for (const unsigned int i : fe_values.dof_indices())
             cell_rhs(i) +=
                 (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                 /*  forcing_term.value(
-                     fe_values.quadrature_point(q_index)) * // f(x_q)*/
                  rhs.value(q_points[q_index]) * fe_values.JxW(q_index)); // dx
         }
 
@@ -452,19 +424,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
     DoFHandler<dim, spacedim> embedded_dh(embedded_triangulation);
     embedded_dh.distribute_dofs(embedded_fe);
     std::cout << "Embedded DoFs: " << embedded_dh.n_dofs() << std::endl;
-
-    // NonMatching::create_coupling_mass_matrix_nitsche(*space_cache,
-    //                                                  space_dh,
-    //                                                  embedded_dh,
-    //                                                  QGauss<dim>(
-    //                                                    2 * space_fe.degree
-    //                                                    + 1),
-    //                                                  system_matrix,
-    //                                                  system_rhs,
-    //                                                  Solution<spacedim>(),
-    //                                                  mapping,
-    //                                                  *embedded_mapping,
-    //                                                  space_constraints);
 
     // Add Nitsche's contribution to the system matrix.
     NonMatching::assemble_nitsche_with_exact_intersections<spacedim, dim,
@@ -569,10 +528,8 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     generate_grids(cycle);
-    if (spacedim == 2 && cycle == 0)
+    if (cycle == 0)
       adjust_grids();
-    // else if (spacedim == 3/* && cycle == 0*/)
-    //   adjust_grids();
 
     // Compute all the things we need to assemble the Nitsche's
     // contributions, namely the two cached triangulations and a degree to
@@ -598,7 +555,6 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       solve();
     }
 
-    // error_table.error_from_exact(space_dh, solution, exact_solution);
     output_results(cycle);
 
     if (cycle < n_refinement_cycles - 1) {
@@ -626,9 +582,8 @@ int main(int argc, char *argv[]) {
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       PoissonNitscheInterface<1, 2> problem;
       problem.run();
+      return 0;
     }
-
-    return 0;
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return 1;

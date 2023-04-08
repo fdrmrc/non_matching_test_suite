@@ -468,12 +468,9 @@ compute_intersection_hexa_quad(const ArrayView<const Point<3>> &hexa,
 
     for (const auto f : tria_quad.finite_face_handles()) {
 
-      CGALTriangle3_exact tria_test(
-          f->vertex(0)->point(), f->vertex(1)->point(), f->vertex(2)->point());
-
-      if (CGAL::do_intersect(tet,
-                             /*tria_quad.triangle(f)*/ tria_test)) {
-        const auto intersection = CGAL::intersection(tria_test, tet);
+      if (CGAL::do_intersect(tet, tria_quad.triangle(f))) {
+        const auto intersection =
+            CGAL::intersection(tria_quad.triangle(f), tet);
 
         if (const CGALTriangle3_exact *t =
                 boost::get<CGALTriangle3_exact>(&*intersection)) {

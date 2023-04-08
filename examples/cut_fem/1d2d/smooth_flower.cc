@@ -348,13 +348,6 @@ template <int dim> void LaplaceSolver<dim>::distribute_dofs() {
   VectorTools::interpolate_boundary_values(
       dof_handler, 0, BoundaryValues<dim>(), constraints,
       fe_collection.component_mask(exterior));
-  // VectorTools::interpolate_boundary_values(
-  //   dof_handler,
-  //   0,
-  //   /*Functions::ZeroFunction<dim>(dim),*/
-  //   Functions::ConstantFunction<dim>(0., dim),
-  //   constraints,
-  //   fe_collection.component_mask(exterior));
 
   constraints.close();
 }
@@ -436,16 +429,6 @@ void LaplaceSolver<dim>::distribute_penalty_terms(
   const FEFaceValues<dim> &fe_face0 = hp_fe_face0.get_present_fe_values();
   const FEFaceValues<dim> &fe_face1 = hp_fe_face1.get_present_fe_values();
 
-  // std::cout << "DOfs0 per cell: " << fe_face0.dofs_per_cell << std::endl;
-  // std::cout << "DOfs1per cell: " << fe_face1.dofs_per_cell << std::endl;
-  // if (fe_face0.dofs_per_cell == 4)
-  //   {
-  //     std::cout << "4 DoFS cell0" << std::endl;
-  //   }
-  // if (fe_face1.dofs_per_cell == 4)
-  //   {
-  //     std::cout << "4 DoFS cell1" << std::endl;
-  //   }
   Assert(!(fe_face0.dofs_per_cell == 4 && fe_face1.dofs_per_cell == 4),
          ExcMessage("They cannot have both 4 DoFs."));
 
@@ -870,11 +853,6 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
             }
 
             if (i % 2 == 0) {
-              // std::cout
-              //   << "Test: "
-              //   << surface_fe_values->shape_value_component(i,
-              //   q, 1)
-              //   << std::endl;
               local_rhs_surf(i) +=
                   AnalyticalSolution<dim>().value(point) *
                   (nitsche_parameter / cell_side_length *
@@ -907,10 +885,6 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
 template <int dim> void LaplaceSolver<dim>::solve() {
   std::cout << "Solving system" << std::endl;
 
-  // const unsigned int max_iterations = solution.size();
-  // SolverControl      solver_control(max_iterations);
-  // SolverCG<>         solver(solver_control);
-  // solver.solve(stiffness_matrix, solution, rhs, PreconditionIdentity());
   PETScWrappers::PreconditionBoomerAMG preconditioner;
   PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
   data.symmetric_operator = true;
@@ -1106,30 +1080,6 @@ double LaplaceSolver<dim>::compute_L2_error_from_outside() const {
             std::pow(error_at_point, 2) * outside_fe_values->JxW(q);
       }
     }
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      solution_values[q] - analytical_solution.value(point);
-                    error_L2_squared +=
-                      std::pow(error_at_point, 2) *
-       surface_fe_values->JxW(q);
-                  }
-              }*/
   }
 
   return std::sqrt(error_L2_squared);
@@ -1203,35 +1153,6 @@ double LaplaceSolver<dim>::compute_H1_error_from_outside() const {
         error_H1_squared += error_at_point * outside_fe_values->JxW(q);
       }
     }
-
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                std::vector<Tensor<1, dim>> solution_gradients(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_gradients(
-                  solution, solution_gradients);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      (analytical_solution.gradient(point) -
-       solution_gradients[q]) .norm_square(); error_H1_squared +=
-       error_at_point * surface_fe_values->JxW(q);
-                  }
-              }*/
   }
   const double sqrtL2error = compute_L2_error_from_outside();
   return std::sqrt(error_H1_squared + sqrtL2error);
@@ -1305,35 +1226,6 @@ double LaplaceSolver<dim>::compute_H1_error_from_inside() const {
         error_H1_squared += error_at_point * inside_fe_values->JxW(q);
       }
     }
-
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                std::vector<Tensor<1, dim>> solution_gradients(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_gradients(
-                  solution, solution_gradients);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      (analytical_solution.gradient(point) -
-       solution_gradients[q]) .norm_square(); error_H1_squared +=
-       error_at_point * surface_fe_values->JxW(q);
-                  }
-              }*/
   }
   const double sqrtL2error = compute_L2_error_from_inside();
   return std::sqrt(error_H1_squared + sqrtL2error);
