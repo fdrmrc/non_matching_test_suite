@@ -25,10 +25,7 @@
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
-#include <deal.II/lac/petsc_precondition.h>
-#include <deal.II/lac/petsc_solver.h>
-#include <deal.II/lac/petsc_sparse_matrix.h>
-#include <deal.II/lac/petsc_vector.h>
+#include <deal.II/lac/generic_linear_algebra.h>
 #include <deal.II/numerics/error_estimator.h>
 
 #include <deal.II/fe/fe_q.h>
@@ -160,9 +157,9 @@ private:
 
   AffineConstraints<double> space_constraints;
   SparsityPattern sparsity_pattern;
-  PETScWrappers::MPI::SparseMatrix system_matrix;
-  PETScWrappers::MPI::Vector solution;
-  PETScWrappers::MPI::Vector system_rhs;
+  LinearAlgebraTrilinos::MPI::SparseMatrix system_matrix;
+  LinearAlgebraTrilinos::MPI::Vector solution;
+  LinearAlgebraTrilinos::MPI::Vector system_rhs;
 
   mutable TimerOutput timer;
 
@@ -427,12 +424,10 @@ template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
 
-  PETScWrappers::PreconditionBoomerAMG preconditioner;
-  PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
-  data.symmetric_operator = true;
-  preconditioner.initialize(system_matrix, data);
+  LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
+  preconditioner.initialize(system_matrix);
   SolverControl solver_control(solution.size(), 1e-8);
-  PETScWrappers::SolverCG solver(solver_control);
+  LinearAlgebraTrilinos::SolverCG solver(solver_control);
   solver.solve(system_matrix, solution, system_rhs, preconditioner);
   std::cout << "Solver converged in: " << solver_control.last_step()
             << " iterations" << std::endl;

@@ -54,6 +54,7 @@
 #include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
+#include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
 
@@ -668,9 +669,6 @@ template <int dim, int spacedim> void PoissonLM<dim, spacedim>::solve() {
   // TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
-  // SparseDirectUMFPACK K_inv_umfpack;
-  // K_inv_umfpack.initialize(stiffness_matrix);
-
   TrilinosWrappers::PreconditionAMG prec_stiffness;
   prec_stiffness.initialize(stiffness_matrix);
 
@@ -689,18 +687,15 @@ template <int dim, int spacedim> void PoissonLM<dim, spacedim>::solve() {
   auto preconditioner = C * K * Ct + M;
 
   auto S = C * K_inv * Ct;
-  // ReductionControl reduction_control(2000, 1.0e-12, 1.0e-10);
 
-  //
-  ReductionControl reduction_control(2000, 1.0e-10, 1.0e-2);
-  // ReductionControl reduction_control(2000, 1.0e-12, 1.0e-2);
+  ReductionControl reduction_control(2000, 1.0e-12, 1.0e-2);
   // SolverCG<Vector<double>> solver_cg(reduction_control);
-  // SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
+  // SolverMinRes<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
   SolverGMRES<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
+  // SolverFGMRES<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
   // SolverCG<TrilinosWrappers::MPI::Vector> solver_cg(reduction_control);
 
   auto S_inv = inverse_operator(S, solver_cg, preconditioner);
-  // auto S_inv = inverse_operator(S, solver_cg, PreconditionIdentity());
 
   lambda = S_inv * (C * K_inv * space_rhs - embedded_rhs);
   solution = K_inv * (space_rhs - Ct * lambda);

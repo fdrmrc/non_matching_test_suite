@@ -25,10 +25,7 @@
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
-#include <deal.II/lac/petsc_precondition.h>
-#include <deal.II/lac/petsc_solver.h>
-#include <deal.II/lac/petsc_sparse_matrix.h>
-#include <deal.II/lac/petsc_vector.h>
+#include <deal.II/lac/generic_linear_algebra.h>
 #include <deal.II/numerics/error_estimator.h>
 
 #include <deal.II/fe/fe_q.h>
@@ -84,30 +81,10 @@ double RightHandSide<3>::value(const Point<3> &p,
 template <>
 double RightHandSide<2>::value(const Point<2> &p,
                                const unsigned int component) const {
-  // (void)p;
+  (void)p;
   (void)component;
   return 0.;
-  // return 8. * numbers::PI * numbers::PI *
-  //        (std::sin(2. * numbers::PI * p[0]) *
-  //         std::sin(2. * numbers::PI * p[1]));
 }
-
-// template <int dim>
-// class BoundaryCondition : public Function<dim>
-// {
-// public:
-//   virtual double value(const Point<dim>  &p,
-//                        const unsigned int component = 0) const override;
-// };
-
-// template <int dim>
-// double BoundaryCondition<dim>::value(const Point<dim>  &p,
-//                                      const unsigned int component) const
-// {
-//   (void)p;
-//   (void)component;
-//   return 1.5;
-// }
 
 template <int dim> class Solution : public Function<dim> {
 public:
@@ -123,9 +100,7 @@ template <>
 double Solution<3>::value(const Point<3> &p,
                           const unsigned int component) const {
   (void)component;
-  // const Point<3> xc{Cx, Cy, Cz}; // center of the sphere
-  // const double   r = (p - xc).norm();
-  // return r <= R ? 1. / R : 1. / r;
+
   return std::sin(2. * numbers::PI * p[0]) * std::sin(2. * numbers::PI * p[1]) *
          std::sin(2. * numbers::PI * p[2]);
 }
@@ -135,9 +110,6 @@ double Solution<2>::value(const Point<2> &p,
                           const unsigned int component) const {
   (void)component;
   const double r = p.norm();
-  // return (r <= R) ? p[0] : ((R * R) / (r * r)) * p[0];
-  // return std::sin(2. * numbers::PI * p[0]) * std::sin(2. * numbers::PI *
-  // p[1]);
 }
 
 template <>
@@ -149,22 +121,10 @@ Tensor<1, 3> Solution<3>::gradient(const Point<3> &p,
   const Point<3> xc{Cx, Cy, Cz}; // center of the sphere
   const double r = (p - xc).norm();
 
-  // gradient[0] = std::cos(2. * numbers ::PI * p[0]) *
-  //               std::sin(2. * numbers::PI * p[1]) *
-  //               std::sin(2. * numbers::PI * p[2]);
-
-  // gradient[1] = std::sin(2. * numbers ::PI * p[0]) *
-  //               std::cos(2. * numbers::PI * p[1]) *
-  //               std::sin(2. * numbers::PI * p[2]);
-
-  // gradient[2] = std::sin(2. * numbers ::PI * p[0]) *
-  //               std::sin(2. * numbers::PI * p[1]) *
-  //               std::cos(2. * numbers::PI * p[2]);
   grad[0] = (r <= R) ? 0. : -(p[0] - Cx) / (std::pow(r * r, 1.5));
   grad[1] = (r <= R) ? 0. : -(p[1] - Cy) / (std::pow(r * r, 1.5));
   grad[2] = (r <= R) ? 0. : -(p[2] - Cz) / (std::pow(r * r, 1.5));
   return grad;
-  // return 2. * numbers::PI * gradient;
 }
 
 template <>
@@ -179,13 +139,6 @@ Tensor<1, 2> Solution<2>::gradient(const Point<2> &p,
 
   gradient[1] = (r <= R) ? 0. : -(2. * R * R * p[0] * p[1]) / (r * r * r * r);
   return gradient;
-  // gradient[0] =
-  //   std::cos(2. * numbers ::PI * p[0]) * std::sin(2. * numbers::PI * p[1]);
-
-  // gradient[1] =
-  //   std::sin(2. * numbers ::PI * p[0]) * std::cos(2. * numbers::PI * p[1]);
-
-  // return 2. * numbers::PI * gradient;
 }
 
 template <int dim, int spacedim> class PoissonNitscheInterface {
@@ -236,35 +189,9 @@ private:
 
   AffineConstraints<double> space_constraints;
   SparsityPattern sparsity_pattern;
-  PETScWrappers::MPI::SparseMatrix system_matrix;
-  PETScWrappers::MPI::Vector solution;
-  PETScWrappers::MPI::Vector system_rhs;
-
-  /**
-   * The actual function to use as a forcing term.
-   */
-  // Function<spacedim> forcing_term;
-
-  /**
-   * This is the value we want to impose on the embedded domain.
-   *
-   */
-  // Functions<spacedim> embedded_value;
-
-  /**
-   * The coefficient in front of the Nitsche contribution to the stiffness
-   * matrix.
-   *
-   */
-  // Function<spacedim> nitsche_coefficient;
-
-  /**
-   * The actual function to use as a exact solution when computing the
-   * errors.
-   * */
-  // Function<spacedim> exact_solution;
-
-  // BoundaryConditions<spacedim> boundary_conditions;
+  LinearAlgebraTrilinos::MPI::SparseMatrix system_matrix;
+  LinearAlgebraTrilinos::MPI::Vector solution;
+  LinearAlgebraTrilinos::MPI::Vector system_rhs;
 
   mutable TimerOutput timer;
 
@@ -460,27 +387,12 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
-  // // std::cout << "Solve system" << std::endl;
 
-  // PreconditionJacobi<SparseMatrix<double>> preconditioner;
-  // preconditioner.initialize(system_matrix);
-  // const auto A = linear_operator<Vector<double>>(system_matrix);
-
-  // ReductionControl         reduction_control(2000, 1.0e-18, 1.0e-10);
-  // SolverCG<Vector<double>> solver(reduction_control);
-
-  // const auto Ainv = inverse_operator(A, solver, preconditioner);
-  // solution        = Ainv * system_rhs;
-
-  // std::cout << "Solver converged in: " << reduction_control.last_step()
-  //           << " iterations" << std::endl;
-  // space_constraints.distribute(solution);
-  PETScWrappers::PreconditionBoomerAMG preconditioner;
-  PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
+  LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
   data.symmetric_operator = true;
   preconditioner.initialize(system_matrix, data);
   SolverControl solver_control(solution.size(), 1e-8);
-  PETScWrappers::SolverCG solver(solver_control);
+  LinearAlgebraTrilinos::SolverCG solver(solver_control);
   solver.solve(system_matrix, solution, system_rhs, preconditioner);
   std::cout << "Solver converged in: " << solver_control.last_step()
             << " iterations" << std::endl;
