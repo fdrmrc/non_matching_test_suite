@@ -904,10 +904,6 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
 template <int dim> void LaplaceSolver<dim>::solve() {
   std::cout << "Solving system" << std::endl;
 
-  // const unsigned int max_iterations = solution.size();
-  // SolverControl      solver_control(max_iterations);
-  // SolverCG<>         solver(solver_control);
-  // solver.solve(stiffness_matrix, solution, rhs, PreconditionIdentity());
   PETScWrappers::PreconditionBoomerAMG preconditioner;
   PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
   data.symmetric_operator = true;
@@ -1200,35 +1196,6 @@ double LaplaceSolver<dim>::compute_H1_error_from_outside() const {
         error_H1_squared += error_at_point * outside_fe_values->JxW(q);
       }
     }
-
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                std::vector<Tensor<1, dim>> solution_gradients(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_gradients(
-                  solution, solution_gradients);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      (analytical_solution.gradient(point) -
-       solution_gradients[q]) .norm_square(); error_H1_squared +=
-       error_at_point * surface_fe_values->JxW(q);
-                  }
-              }*/
   }
   const double sqrtL2error = compute_L2_error_from_outside();
   return std::sqrt(error_H1_squared + sqrtL2error);
@@ -1302,35 +1269,6 @@ double LaplaceSolver<dim>::compute_H1_error_from_inside() const {
         error_H1_squared += error_at_point * inside_fe_values->JxW(q);
       }
     }
-
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                std::vector<Tensor<1, dim>> solution_gradients(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_gradients(
-                  solution, solution_gradients);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      (analytical_solution.gradient(point) -
-       solution_gradients[q]) .norm_square(); error_H1_squared +=
-       error_at_point * surface_fe_values->JxW(q);
-                  }
-              }*/
   }
   const double sqrtL2error = compute_L2_error_from_inside();
   return std::sqrt(error_H1_squared + sqrtL2error);
@@ -1351,7 +1289,6 @@ template <int dim> void LaplaceSolver<dim>::run() {
     initialize_matrices();
     assemble_system();
     solve();
-    // if (cycle == 3)
     output_results();
     const double error_L2_inside = compute_L2_error_from_inside();
     const double error_L2_outside = compute_L2_error_from_outside();
@@ -1363,7 +1300,6 @@ template <int dim> void LaplaceSolver<dim>::run() {
     const double error_H1 = std::sqrt(error_H1_outside * error_H1_outside +
                                       error_H1_inside * error_H1_inside);
 
-    // const double error_H1 = compute_H1_error_from_outside();
     const double cell_side_length =
         triangulation.begin_active()->minimum_vertex_distance();
 

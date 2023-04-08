@@ -88,23 +88,6 @@ double RightHandSide<2>::value(const Point<2> &p,
           std::sin(2. * numbers::PI * p[1]));
 }
 
-// template <int dim>
-// class BoundaryCondition : public Function<dim>
-// {
-// public:
-//   virtual double value(const Point<dim>  &p,
-//                        const unsigned int component = 0) const override;
-// };
-
-// template <int dim>
-// double BoundaryCondition<dim>::value(const Point<dim>  &p,
-//                                      const unsigned int component) const
-// {
-//   (void)p;
-//   (void)component;
-//   return 1.5;
-// }
-
 template <int dim> class Solution : public Function<dim> {
 public:
   virtual double value(const Point<dim> &p,
@@ -200,32 +183,6 @@ private:
   PETScWrappers::MPI::Vector solution;
   PETScWrappers::MPI::Vector system_rhs;
 
-  /**
-   * The actual function to use as a forcing term.
-   */
-  // Function<spacedim> forcing_term;
-
-  /**
-   * This is the value we want to impose on the embedded domain.
-   *
-   */
-  // Functions<spacedim> embedded_value;
-
-  /**
-   * The coefficient in front of the Nitsche contribution to the stiffness
-   * matrix.
-   *
-   */
-  // Function<spacedim> nitsche_coefficient;
-
-  /**
-   * The actual function to use as a exact solution when computing the
-   * errors.
-   * */
-  // Function<spacedim> exact_solution;
-
-  // BoundaryConditions<spacedim> boundary_conditions;
-
   mutable TimerOutput timer;
 
   mutable ConvergenceTable convergence_table;
@@ -234,7 +191,7 @@ private:
 
   /**
    * The penalty parameter which multiplies Nitsche's terms. In this program
-   * it is defaulted to 100.0
+   * it is defaulted to 10.0
    */
 
   double penalty = 10.0;
@@ -286,31 +243,6 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids(
 
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
-  // std::cout << "Adjusting the grids (level set)" << std::endl;
-  // // In case of level set
-  // FE_Q<dim, spacedim>       embedded_fe(1);
-  // DoFHandler<dim, spacedim> embedded_dh(embedded_triangulation);
-  // embedded_dh.distribute_dofs(embedded_fe);
-
-  // std::vector<Point<spacedim>> support_points(embedded_dh.n_dofs());
-  // DoFTools::map_dofs_to_support_points(*embedded_mapping,
-  //                                      embedded_dh,
-  //                                      support_points);
-
-  // for (unsigned int i = 0; i < 2; ++i)
-  //   {
-  //     const auto point_locations =
-  //       GridTools::compute_point_locations(*space_cache, support_points);
-  //     const auto &cells = std::get<0>(point_locations);
-  //     for (auto &cell : cells)
-  //       {
-  //         cell->set_refine_flag();
-  //         for (const auto face_no : cell->face_indices())
-  //           if (!cell->at_boundary(face_no))
-  //             cell->neighbor(face_no)->set_refine_flag();
-  //       }
-  //     space_triangulation.execute_coarsening_and_refinement();
-  //   }
 
   std::cout << "Adjusting the grids (with two meshes)..." << std::endl;
   namespace bgi = boost::geometry::index;
@@ -428,19 +360,13 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
 
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
-      space_dh, 0,
-      /*Functions::ZeroFunction<spacedim>(),*/
-      Solution<spacedim>(),
+      space_dh, 0, Solution<spacedim>(),
       space_constraints); // zero Dirichlet on the boundary
 
   space_constraints.close();
   DynamicSparsityPattern dsp(space_dh.n_dofs());
   DoFTools::make_sparsity_pattern(space_dh, dsp, space_constraints, false);
   sparsity_pattern.copy_from(dsp);
-
-  // system_matrix.reinit(sparsity_pattern);
-  // solution.reinit(space_dh.n_dofs());
-  // system_rhs.reinit(space_dh.n_dofs());
 
   const std::vector<IndexSet> locally_owned_dofs_per_proc =
       DoFTools::locally_owned_dofs_per_subdomain(space_dh);
@@ -488,8 +414,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
           for (const unsigned int i : fe_values.dof_indices())
             cell_rhs(i) +=
                 (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                 /*  forcing_term.value(
-                     fe_values.quadrature_point(q_index)) * // f(x_q)*/
                  rhs.value(q_points[q_index]) * fe_values.JxW(q_index)); // dx
         }
 
@@ -498,8 +422,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
                                                      local_dof_indices,
                                                      system_matrix, system_rhs);
       }
-      // system_matrix.compress(VectorOperation::add);
-      // system_rhs.compress(VectorOperation::add);
     }
   }
 
@@ -512,20 +434,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
     embedded_dh.distribute_dofs(embedded_fe);
     std::cout << "Embedded DoFs: " << embedded_dh.n_dofs() << std::endl;
 
-    // NonMatching::create_coupling_mass_matrix_nitsche(*space_cache,
-    //                                                  space_dh,
-    //                                                  embedded_dh,
-    //                                                  QGauss<dim>(
-    //                                                    2 * space_fe.degree
-    //                                                    + 1),
-    //                                                  system_matrix,
-    //                                                  system_rhs,
-    //                                                  Solution<spacedim>(),
-    //                                                  mapping,
-    //                                                  *embedded_mapping,
-    //                                                  space_constraints);
-
-    // Add Nitsche's contribution to the system matrix.
     NonMatching::assemble_nitsche_with_exact_intersections<spacedim, dim,
                                                            spacedim>(
         space_dh, cells_and_quads, system_matrix, space_constraints,
@@ -554,9 +462,6 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
-  // PreconditionJacobi<SparseMatrix<double>> preconditioner;
-  // preconditioner.initialize(system_matrix);
-
   PETScWrappers::PreconditionBoomerAMG preconditioner;
   PETScWrappers::PreconditionBoomerAMG::AdditionalData data;
   data.symmetric_operator = true;
@@ -564,18 +469,6 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
   SolverControl solver_control(solution.size(), 1e-8);
   PETScWrappers::SolverCG solver(solver_control);
   solver.solve(system_matrix, solution, system_rhs, preconditioner);
-
-  // const auto A =
-  // linear_operator<PETScWrappers::MPI::Vector>(system_matrix);
-
-  // ReductionControl         reduction_control(2000, 1.0e-18, 1.0e-10);
-  // SolverCG<Vector<double>> solver(reduction_control);
-
-  // const auto Ainv = inverse_operator(A, solver, preconditioner);
-  // solution        = Ainv * system_rhs;
-
-  // std::cout << "Solver converged in: " << reduction_control.last_step()
-  //           << " iterations" << std::endl;
 
   std::cout << "Solver converged in: " << solver_control.last_step()
             << " iterations" << std::endl;
@@ -589,7 +482,6 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
     const unsigned cycle) const {
   std::cout << "Output results" << std::endl;
   TimerOutput::Scope timer_section(timer, "Output results");
-  // std::cout << "Output results" << std::endl;
   data_out.clear();
   data_out.attach_dof_handler(space_dh);
   data_out.add_data_vector(solution, "solution");
@@ -697,22 +589,8 @@ int main(int argc, char *argv[]) {
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       PoissonNitscheInterface<1, 2> problem;
       problem.run();
+      return 0;
     }
-    {
-        // std::cout << "Solving in 2D/2D" << std::endl;
-        // PoissonNitscheInterface<2> problem;
-        // problem.run();
-    } {
-        // std::cout << "Solving in 2D/3D" << std::endl;
-        // Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-        // PoissonNitscheInterface<2, 3>    problem;
-        // problem.run();
-    } {
-      // std::cout << "Solving in 3D/3D" << std::endl;
-      // PoissonNitscheInterface<3> problem;
-      // problem.run();
-    }
-    return 0;
   } catch (const std::exception &e) {
     std::cerr << e.what() << '\n';
     return 1;
