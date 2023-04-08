@@ -8,7 +8,7 @@ This builds on top of the integration of the `CGAL` library (https://www.cgal.or
 
 - `mkdir build && cd build`
 - `cmake .` , or `cmake -DDEAL_II_DIR=/your/local/path/to/deal/ ..` 
-- `make`, or `make -j N`, begin `N` the number of make jobs you may want to ask.
+- `make`, or `make -j N`, being `N` the number of make jobs you may want to ask.
 
 
 ## Using Docker image [TODO]
