@@ -1,2 +1,44 @@
 metadata_version: 1
-name: Non_Matching_test_suite
+name: Comparison of non-matching techniques for the finite element approximation of
+  interface problems
+description: "This code presents a comprehensive comparison of methods to address
+  the Dirichlet condition in a fictitious domain approach with non-conformal mesh
+  boundaries. The presented implementations are based on the C++ finite element library
+  deal.II, and the methods compared include a Lagrange multiplier method, a Nitsche
+  method derived from it, and a Nitsche method on cut elements. The primary aim is
+  to provide a priori error estimates for each method, assessing computational cost
+  and accuracy. \n\nThese results have been presented in a paper titled \"Comparison
+  of non-matching techniques for the finite element approximation of interface problems\".
+  The implementation leverages the capabilities of the CGAL library for computational
+  geometry tasks, ensuring robust intersection routines. The research validates the
+  implementations with varied experiments, considering different mesh configurations,
+  algorithms, and boundary conditions. The results underscore the nuances of each
+  method, providing insights into their applicability and performance in different
+  scenarios."
+tags:
+- Non-matching Discretizations
+- finite element method
+- CGAL
+- deal.II
+- Lagrange Multiplier
+- Cut-FEM
+- Nitsche
+authors:
+- name: Daniele Boffi
+  affiliations:
+  - name: King Abdullah University of Science and Technology
+- name: Andrea Cangiani
+  affiliations:
+  - name: International School for Advanced Studies
+- name: Marco Feder
+  affiliations:
+  - name: International School for Advanced Studies
+- name: Lucia Gastaldi
+  affiliations:
+  - name: Università degli Studi di Brescia
+- name: Andrea Cangiani
+  affiliations:
+  - name: International School for Advanced Studies
+- name: Luca Heltai
+  affiliations:
+  - name: International School for Advanced Studies
