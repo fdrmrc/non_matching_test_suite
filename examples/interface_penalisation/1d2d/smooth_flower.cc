@@ -13,8 +13,6 @@
 //
 // ---------------------------------------------------------------------
 
-#include <deal.II/grid/grid_out.h>
-
 #include <deal.II/base/conditional_ostream.h>
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/function.h>
@@ -22,46 +20,44 @@
 #include <deal.II/base/parameter_acceptor.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
-#include <deal.II/fe/fe_system.h>
-#include <deal.II/fe/mapping_fe_field.h>
-#include <deal.II/grid/grid_in.h>
-#include <deal.II/lac/generic_linear_algebra.h>
-#include <deal.II/lac/linear_operator_tools.h>
-#include <deal.II/numerics/error_estimator.h>
-
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
-
 #include <deal.II/fe/fe_q.h>
-
+#include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/mapping_fe_field.h>
 #include <deal.II/grid/filtered_iterator.h>
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_tools_cache.h>
 #include <deal.II/grid/tria.h>
-
-#include "coupling_utilities.h"
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/generic_linear_algebra.h>
+#include <deal.II/lac/linear_operator_tools.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/error_estimator.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
 #include <iostream>
 
+#include "coupling_utilities.h"
+
 using namespace dealii;
 
 // Functors-like classes to describe boundary values, right hand side,
 // analytical solution, if any.
-template <int dim> class RightHandSide : public Function<dim> {
-public:
+template <int dim>
+class RightHandSide : public Function<dim> {
+ public:
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
 };
@@ -85,14 +81,14 @@ double RightHandSide<2>::value(const Point<2> &p,
           std::sin(2. * numbers::PI * p[1]));
 }
 
-template <int dim> class Solution : public Function<dim> {
-public:
+template <int dim>
+class Solution : public Function<dim> {
+ public:
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
 
-  virtual Tensor<1, dim>
-  gradient(const Point<dim> &p,
-           const unsigned int component = 0) const override;
+  virtual Tensor<1, dim> gradient(
+      const Point<dim> &p, const unsigned int component = 0) const override;
 };
 
 template <>
@@ -116,12 +112,13 @@ Tensor<1, 2> Solution<2>::gradient(const Point<2> &p,
   return 2. * numbers::PI * gradient;
 }
 
-template <int dim, int spacedim = dim> class PoissonNitscheInterface {
-public:
+template <int dim, int spacedim = dim>
+class PoissonNitscheInterface {
+ public:
   PoissonNitscheInterface();
   void run();
 
-private:
+ private:
   void generate_grids(const unsigned int);
 
   void adjust_grids();
@@ -193,13 +190,15 @@ private:
 
   double penalty = 10.0;
 
-  unsigned int n_refinement_cycles = 5; // 6
+  unsigned int n_refinement_cycles = 5;  // 6
 };
 
 template <int dim, int spacedim>
 PoissonNitscheInterface<dim, spacedim>::PoissonNitscheInterface()
-    : space_triangulation(MPI_COMM_WORLD), space_fe(1),
-      space_dh(space_triangulation), mpi_communicator(MPI_COMM_WORLD),
+    : space_triangulation(MPI_COMM_WORLD),
+      space_fe(1),
+      space_dh(space_triangulation),
+      mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
       timer(std::cout, TimerOutput::summary, TimerOutput::cpu_and_wall_times) {}
@@ -210,12 +209,11 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids(
   TimerOutput::Scope timer_section(timer, "Generate grids");
   if (cycle == 0) {
     GridGenerator::hyper_cube(space_triangulation, -1., 1.);
-    space_triangulation.refine_global(4); // 2
+    space_triangulation.refine_global(4);  // 2
   }
 
   if constexpr (dim == 1 && spacedim == 2) {
     if (cycle == 0) {
-
       GridIn<1, 2> grid_in;
       grid_in.attach_triangulation(embedded_triangulation);
       std::ifstream input_file("../../grids/flower_interface.vtk");
@@ -240,7 +238,6 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids(
 
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
-
   std::cout << "Adjusting the grids (with two meshes)..." << std::endl;
   namespace bgi = boost::geometry::index;
 
@@ -265,9 +262,9 @@ void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
       // bounding box
       done = true;
 
-      const bool use_space = false; // parameters.use_space;
+      const bool use_space = false;  // parameters.use_space;
 
-      const bool use_embedded = false; // parameters.use_embedded;
+      const bool use_embedded = false;  // parameters.use_embedded;
 
       AssertThrow(!(use_embedded && use_space),
                   ExcMessage("You can't refine both the embedded and "
@@ -314,7 +311,7 @@ void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
   refine();
 
   // Pre refine the space grid according to the delta refinement
-  const unsigned int n_space_cycles = 4; // before it was 2.
+  const unsigned int n_space_cycles = 4;  // before it was 2.
   for (unsigned int i = 0; i < n_space_cycles; ++i) {
     const auto &tree =
         space_cache->get_locally_owned_cell_bounding_boxes_rtree();
@@ -358,7 +355,7 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
       space_dh, 0, Solution<spacedim>(),
-      space_constraints); // zero Dirichlet on the boundary
+      space_constraints);  // zero Dirichlet on the boundary
 
   space_constraints.close();
   DynamicSparsityPattern dsp(space_dh.n_dofs());
@@ -405,13 +402,13 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
           for (const unsigned int i : fe_values.dof_indices())
             for (const unsigned int j : fe_values.dof_indices())
               cell_matrix(i, j) +=
-                  (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                   fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                   fe_values.JxW(q_index));           // dx
+                  (fe_values.shape_grad(i, q_index) *  // grad phi_i(x_q)
+                   fe_values.shape_grad(j, q_index) *  // grad phi_j(x_q)
+                   fe_values.JxW(q_index));            // dx
           for (const unsigned int i : fe_values.dof_indices())
             cell_rhs(i) +=
-                (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                 rhs.value(q_points[q_index]) * fe_values.JxW(q_index)); // dx
+                (fe_values.shape_value(i, q_index) *  // phi_i(x_q)
+                 rhs.value(q_points[q_index]) * fe_values.JxW(q_index));  // dx
         }
 
         cell->get_dof_indices(local_dof_indices);
@@ -497,7 +494,7 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
 
     difference_per_cell.reinit(
         space_triangulation
-            .n_active_cells()); // zero out again to store the H1 error
+            .n_active_cells());  // zero out again to store the H1 error
     VectorTools::integrate_difference(
         space_dh, solution, Solution<spacedim>(), difference_per_cell,
         QGauss<spacedim>(2 * space_fe.degree + 1), VectorTools::H1_norm);
@@ -506,8 +503,8 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh.n_dofs() -
-                                            space_constraints.n_constraints());
+    convergence_table.add_value(
+        "dofs", space_dh.n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
   }
@@ -529,8 +526,7 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     generate_grids(cycle);
-    if (spacedim == 2 && cycle == 0)
-      adjust_grids();
+    if (spacedim == 2 && cycle == 0) adjust_grids();
     // else if (spacedim == 3/* && cycle == 0*/)
     //   adjust_grids();
 
@@ -538,8 +534,8 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
     // contributions, namely the two cached triangulations and a degree to
     // integrate over the intersections.
     {
-      TimerOutput::Scope timer_section(timer, "Total time cycle " +
-                                                  std::to_string(cycle));
+      TimerOutput::Scope timer_section(
+          timer, "Total time cycle " + std::to_string(cycle));
       std::cout << "Start collecting quadratures" << std::endl;
       cells_and_quads = NonMatching::collect_quadratures_on_overlapped_grids(
           *space_cache, *embedded_cache, 2 * space_fe.degree + 1);
@@ -576,7 +572,9 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       "L2", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(
       "H1", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
-  convergence_table.write_text(std::cout);
+  std::string conv_filename = "table_05.txt";
+  std::ofstream table_file(conv_filename);
+  convergence_table.write_text(conv_filename);
 }
 
 int main(int argc, char *argv[]) {

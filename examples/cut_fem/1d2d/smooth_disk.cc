@@ -1311,10 +1311,11 @@ template <int dim> void LaplaceSolver<dim>::run() {
     convergence_table.evaluate_convergence_rates(
         "H1-Error", ConvergenceTable::reduction_rate_log2);
 
-    std::cout << std::endl;
-    convergence_table.write_text(std::cout);
-    std::cout << std::endl;
   }
+  
+  std::string conv_filename = "table_03.txt";
+  std::ofstream table_file(conv_filename);
+  convergence_table.write_text(conv_filename);
 }
 
 } // namespace Step85

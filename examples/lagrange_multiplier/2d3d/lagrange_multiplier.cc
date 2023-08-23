@@ -13,8 +13,6 @@
 //
 // ---------------------------------------------------------------------
 
-#include <deal.II/lac/linear_operator_tools.h>
-
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/function_lib.h>
@@ -23,46 +21,41 @@
 #include <deal.II/base/parsed_function.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_tools.h>
 #include <deal.II/fe/fe_dgq.h>
+#include <deal.II/fe/fe_q.h>
+#include <deal.II/grid/filtered_iterator.h>
+#include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_out.h>
+#include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/grid_tools_cache.h>
+#include <deal.II/grid/tria.h>
+#include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/linear_operator_tools.h>
+#include <deal.II/lac/precondition.h>
+#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_gmres.h>
 #include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/trilinos_linear_operator.h>
 #include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
-#include <deal.II/non_matching/coupling.h>
-#include <deal.II/numerics/error_estimator.h>
-
-#include <deal.II/grid/grid_out.h>
-
-#include <deal.II/dofs/dof_handler.h>
-#include <deal.II/dofs/dof_tools.h>
-
-#include <deal.II/fe/fe_dgq.h>
-#include <deal.II/fe/fe_q.h>
-
-#include <deal.II/grid/filtered_iterator.h>
-#include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_tools.h>
-#include <deal.II/grid/grid_tools_cache.h>
-#include <deal.II/grid/tria.h>
-
-#include <deal.II/lac/affine_constraints.h>
-#include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/precondition.h>
-#include <deal.II/lac/solver_cg.h>
-#include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-
-#include "coupling_utilities.h"
+#include <deal.II/non_matching/coupling.h>
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/error_estimator.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
 #include <iostream>
+
+#include "coupling_utilities.h"
 
 static constexpr double R = .3;
 static constexpr double Cx = .5;
@@ -71,10 +64,11 @@ static constexpr double Cz = .5;
 
 using namespace dealii;
 
-template <int dim, int spacedim = dim> class PoissonDLM {
-public:
+template <int dim, int spacedim = dim>
+class PoissonDLM {
+ public:
   class Parameters : public ParameterAcceptor {
-  public:
+   public:
     Parameters();
 
     unsigned int n_refinement_cycles = 6;
@@ -108,7 +102,7 @@ public:
 
   void run();
 
-private:
+ private:
   const Parameters &parameters;
 
   void setup_grids_and_dofs();
@@ -184,6 +178,8 @@ private:
 
   mutable ConvergenceTable convergence_table;
 
+  bool smoothness;
+
   mutable DataOut<spacedim> data_out;
 
   unsigned int cycle;
@@ -226,12 +222,15 @@ PoissonDLM<dim, spacedim>::Parameters::Parameters()
 }
 
 template <int dim, int spacedim>
-PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
-    : parameters(parameters), space_triangulation(MPI_COMM_WORLD),
+PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters,
+                                      const bool smoothness_solution)
+    : parameters(parameters),
+      space_triangulation(MPI_COMM_WORLD),
       mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
-      rhs_function("Right hand side"), solution_function("Solution"),
+      rhs_function("Right hand side"),
+      solution_function("Solution"),
       multiplier_function("Solution multiplier"),
       boundary_condition_function("Boundary condition"),
       timer(std::cout, TimerOutput::every_call_and_summary,
@@ -247,6 +246,7 @@ PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters)
 
   boundary_condition_function.declare_parameters_call_back.connect(
       []() -> void { ParameterAcceptor::prm.set("Function expression", "0"); });
+  smoothness = smoothness_solution;
 }
 
 template <int dim, int spacedim>
@@ -255,12 +255,11 @@ void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
     GridGenerator::hyper_cube(space_triangulation, -1., 1.);
 
     if constexpr (dim == 2 && spacedim == 3) {
-
       GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy, Cz}, R);
       space_triangulation.refine_global(
-          parameters.space_initial_global_refinements); // 4
+          parameters.space_initial_global_refinements);  // 4
       embedded_triangulation.refine_global(
-          parameters.embedded_initial_global_refinements); // 2
+          parameters.embedded_initial_global_refinements);  // 2
     } else {
       Assert(false, ExcMessage("Invalid dimensions."));
     }
@@ -419,7 +418,7 @@ void PoissonDLM<dim, spacedim>::setup_space_dofs() {
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
       *space_dh, 0, solution_function,
-      space_constraints); // Dirichlet on the boundary
+      space_constraints);  // Dirichlet on the boundary
 
   space_constraints.close();
 
@@ -537,9 +536,9 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
         for (const unsigned int i : fe_values_gamma.dof_indices())
           for (const unsigned int j : fe_values_gamma.dof_indices())
             cell_mass_matrix(i, j) +=
-                fe_values_gamma.shape_value(i, q_index) * //  q_i(x_q)
-                fe_values_gamma.shape_value(j, q_index) * //  q_j(x_q)
-                fe_values_gamma.JxW(q_index);             // dx
+                fe_values_gamma.shape_value(i, q_index) *  //  q_i(x_q)
+                fe_values_gamma.shape_value(j, q_index) *  //  q_j(x_q)
+                fe_values_gamma.JxW(q_index);              // dx
       }
 
       cell->get_dof_indices(local_dof_gamma_indices);
@@ -560,15 +559,15 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
         for (const unsigned int i : fe_values.dof_indices())
           for (const unsigned int j : fe_values.dof_indices())
             cell_matrix(i, j) +=
-                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                 fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                 fe_values.JxW(q_index));           // dx
+                (fe_values.shape_grad(i, q_index) *  // grad phi_i(x_q)
+                 fe_values.shape_grad(j, q_index) *  // grad phi_j(x_q)
+                 fe_values.JxW(q_index));            // dx
         for (const unsigned int i : fe_values.dof_indices())
-          cell_rhs(i) += (fe_values.shape_value(i, q_index) * // phi_i(x_q)
+          cell_rhs(i) += (fe_values.shape_value(i, q_index) *  // phi_i(x_q)
                           /*  forcing_term.value(
                               fe_values.quadrature_point(q_index)) * // f(x_q)*/
                           rhs_function.value(q_points[q_index]) *
-                          fe_values.JxW(q_index)); // dx
+                          fe_values.JxW(q_index));  // dx
       }
 
       cell->get_dof_indices(local_dof_indices);
@@ -608,8 +607,8 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
 }
 
 // We solve the resulting system as done in the classical Poisson example.
-template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::solve() {
-
+template <int dim, int spacedim>
+void PoissonDLM<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
@@ -684,7 +683,7 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
     difference_per_cell.reinit(
         space_triangulation
-            .n_active_cells()); // zero out again to store the H1 error
+            .n_active_cells());  // zero out again to store the H1 error
     VectorTools::integrate_difference(
         *space_dh, solution, solution_function, difference_per_cell,
         QGauss<spacedim>(2 * parameters.fe_space_degree + 1),
@@ -694,8 +693,8 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh->n_dofs() -
-                                            space_constraints.n_constraints());
+    convergence_table.add_value(
+        "dofs", space_dh->n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("dofs_emb", embedded_dh->n_dofs());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
@@ -723,12 +722,13 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
 // The run() method here differs only in the call to
 // NonMatching::compute_intersection().
-template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::run() {
+template <int dim, int spacedim>
+void PoissonDLM<dim, spacedim>::run() {
   for (cycle = 0; cycle < parameters.n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     {
-      TimerOutput::Scope timer_section(timer, "Total time cycle " +
-                                                  std::to_string(cycle));
+      TimerOutput::Scope timer_section(
+          timer, "Total time cycle " + std::to_string(cycle));
       setup_grids_and_dofs();
 
       // Compute all the things we need to assemble the Nitsche's
@@ -787,7 +787,14 @@ template <int dim, int spacedim> void PoissonDLM<dim, spacedim>::run() {
   // convergence_table.set_scientific("L2_multiplier", true);
   // convergence_table.evaluate_convergence_rates(
   //   "L2_multiplier", ConvergenceTable::reduction_rate_log2);
-  convergence_table.write_text(std::cout);
+  std::string conv_filename = "table_";
+  if (smoothness)
+    conv_filename += "10.txt";
+  else
+    conv_filename += "13.txt";
+
+  std::ofstream table_file(conv_filename);
+  convergence_table.write_text(conv_filename);
 }
 
 int main(int argc, char **argv) {
@@ -811,13 +818,19 @@ int main(int argc, char **argv) {
       // // } {
       std::cout << "Solving in 2D/3D" << std::endl;
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
-      PoissonDLM<2, 3>::Parameters parameters;
-      PoissonDLM<2, 3> problem(parameters);
+      bool smoothness = false;
+
       std::string parameter_file;
-      if (argc > 1)
+      if (argc > 1) {
         parameter_file = argv[1];
-      else
+        if (parameter_file.find("lm_2d3d.smooth_sphere") != std::string::npos)
+          smoothness = true;
+      } else {
         parameter_file = "parameters.prm";
+      }
+
+      PoissonDLM<2, 3>::Parameters parameters;
+      PoissonDLM<2, 3> problem(parameters, smoothness);
 
       ParameterAcceptor::initialize(parameter_file, "used_parameters.prm");
       problem.run();

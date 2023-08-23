@@ -843,7 +843,10 @@ template <int dim, int spacedim> void PoissonLM<dim, spacedim>::run() {
       "L2_multiplier", "dofs_emb", ConvergenceTable::reduction_rate_log2, dim);
   convergence_table.evaluate_convergence_rates(
       "H12_multiplier", "dofs_emb", ConvergenceTable::reduction_rate_log2, dim);
-  convergence_table.write_text(std::cout);
+  
+  std::string conv_filename = "table_04.txt";
+  std::ofstream table_file(conv_filename);
+  convergence_table.write_text(conv_filename);
 }
 
 int main(int argc, char **argv) {

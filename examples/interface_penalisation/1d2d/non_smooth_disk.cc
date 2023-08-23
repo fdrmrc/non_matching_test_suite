@@ -573,7 +573,10 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       "L2", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(
       "H1", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
-  convergence_table.write_text(std::cout);
+
+  std::string conv_filename = "table_08.txt";
+  std::ofstream table_file(conv_filename);
+  convergence_table.write_text(conv_filename);
 }
 
 int main(int argc, char *argv[]) {
