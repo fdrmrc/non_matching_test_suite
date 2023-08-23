@@ -546,7 +546,7 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       "H1", ConvergenceTable::reduction_rate_log2);
   std::string conv_filename = "table_11.txt";
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
 int main(int argc, char *argv[]) {

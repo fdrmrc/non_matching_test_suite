@@ -13,13 +13,13 @@
 //
 // ---------------------------------------------------------------------
 
-#include <deal.II/base/function.h>
-
 #include <CGAL/Constrained_Delaunay_triangulation_2.h>
 #include <CGAL/Delaunay_mesh_face_base_2.h>
 #include <CGAL/Delaunay_mesh_size_criteria_2.h>
 #include <CGAL/Delaunay_mesher_2.h>
 #include <deal.II/base/convergence_table.h>
+#include <deal.II/base/function.h>
+#include <deal.II/base/function_signed_distance.h>
 #include <deal.II/base/mpi.h>
 #include <deal.II/base/point.h>
 #include <deal.II/base/quadrature.h>
@@ -28,50 +28,41 @@
 #include <deal.II/base/utilities.h>
 #include <deal.II/cgal/triangulation.h>
 #include <deal.II/distributed/shared_tria.h>
-#include <deal.II/grid/grid_in.h>
-#include <deal.II/grid/grid_out.h>
-#include <deal.II/lac/generic_linear_algebra.h>
-
 #include <deal.II/dofs/dof_tools.h>
-
 #include <deal.II/fe/fe_interface_values.h>
 #include <deal.II/fe/fe_nothing.h>
 #include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
 #include <deal.II/fe/fe_update_flags.h>
 #include <deal.II/fe/fe_values.h>
-#include <deal.II/hp/q_collection.h>
-
 #include <deal.II/grid/filtered_iterator.h>
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_in.h>
+#include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/grid_tools_cache.h>
 #include <deal.II/grid/tria.h>
-
 #include <deal.II/hp/fe_collection.h>
 #include <deal.II/hp/q_collection.h>
-
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/generic_linear_algebra.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_control.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/sparsity_pattern.h>
 #include <deal.II/lac/vector.h>
-
+#include <deal.II/non_matching/fe_immersed_values.h>
+#include <deal.II/non_matching/fe_values.h>
+#include <deal.II/non_matching/mesh_classifier.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
 #include <vector>
 
-#include <deal.II/base/function_signed_distance.h>
-
 #include "coupling_utilities.h"
-#include <deal.II/non_matching/fe_immersed_values.h>
-#include <deal.II/non_matching/fe_values.h>
-#include <deal.II/non_matching/mesh_classifier.h>
 
 static constexpr double Cx = .5;
 static constexpr double Cy = .5;
@@ -80,13 +71,14 @@ static constexpr double R = .3;
 namespace Step85 {
 using namespace dealii;
 
-template <int dim> class LaplaceSolver {
-public:
+template <int dim>
+class LaplaceSolver {
+ public:
   LaplaceSolver();
 
   void run();
 
-private:
+ private:
   void make_grid();
 
   void setup_discrete_level_set(const unsigned int cycle);
@@ -156,8 +148,11 @@ private:
 
 template <int dim>
 LaplaceSolver<dim>::LaplaceSolver()
-    : fe_degree(1), triangulation(MPI_COMM_WORLD), fe_level_set(fe_degree),
-      level_set_dof_handler(triangulation), dof_handler(triangulation),
+    : fe_degree(1),
+      triangulation(MPI_COMM_WORLD),
+      fe_level_set(fe_degree),
+      level_set_dof_handler(triangulation),
+      dof_handler(triangulation),
       fe_in(FE_Q<dim>(fe_degree), 1, FE_Nothing<dim>(), 1),
       fe_surf(FE_Q<dim>(fe_degree), 1, FE_Q<dim>(fe_degree), 1),
       fe_out(FE_Nothing<dim>(), 1, FE_Q<dim>(fe_degree), 1),
@@ -170,7 +165,8 @@ LaplaceSolver<dim>::LaplaceSolver()
   fe_collection.push_back(fe_out);
 }
 
-template <int dim> void LaplaceSolver<dim>::make_grid() {
+template <int dim>
+void LaplaceSolver<dim>::make_grid() {
   std::cout << "Creating background mesh" << std::endl;
 
   GridGenerator::hyper_cube(triangulation, -1., 1.);
@@ -222,8 +218,9 @@ void LaplaceSolver<dim>::setup_discrete_level_set(const unsigned int cycle) {
                            level_set);
 }
 
-template <int dim> class AnalyticalSolution : public Function<dim> {
-public:
+template <int dim>
+class AnalyticalSolution : public Function<dim> {
+ public:
   double value(const Point<dim> &point,
                const unsigned int component = 0) const override;
 
@@ -241,9 +238,8 @@ double AnalyticalSolution<dim>::value(const Point<dim> &point,
 }
 
 template <int dim>
-Tensor<1, dim>
-AnalyticalSolution<dim>::gradient(const Point<dim> &point,
-                                  const unsigned int component) const {
+Tensor<1, dim> AnalyticalSolution<dim>::gradient(
+    const Point<dim> &point, const unsigned int component) const {
   AssertIndexRange(component, this->n_components);
   (void)component;
   Assert(dim == 2, ExcMessage("Tested so far for 1d2d"));
@@ -255,8 +251,9 @@ AnalyticalSolution<dim>::gradient(const Point<dim> &point,
   return grad;
 }
 
-template <int dim> class BoundaryValues : public Function<dim> {
-public:
+template <int dim>
+class BoundaryValues : public Function<dim> {
+ public:
   BoundaryValues() : Function<dim>(dim) {}
 
   virtual double value(const Point<dim> &p,
@@ -272,14 +269,13 @@ double BoundaryValues<dim>::value(const Point<dim> &p,
   Assert(component < this->n_components,
          ExcIndexRange(component, 0, this->n_components));
 
-  if (component == dim - 1)
-    switch (dim) {
-    case 2:
-      return AnalyticalSolution<dim>().value(p);
-    case 3:
-      return std::sin(numbers::PI * p[0]) * std::sin(numbers::PI * p[1]);
-    default:
-      Assert(false, ExcNotImplemented());
+  if (component == dim - 1) switch (dim) {
+      case 2:
+        return AnalyticalSolution<dim>().value(p);
+      case 3:
+        return std::sin(numbers::PI * p[0]) * std::sin(numbers::PI * p[1]);
+      default:
+        Assert(false, ExcNotImplemented());
     }
 
   return 0;
@@ -292,8 +288,9 @@ void BoundaryValues<dim>::vector_value(const Point<dim> &p,
     values(c) = BoundaryValues<dim>::value(p, c);
 }
 
-template <int dim> class RhsFunction : public Function<dim> {
-public:
+template <int dim>
+class RhsFunction : public Function<dim> {
+ public:
   RhsFunction() : Function<dim>() {}
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
@@ -308,12 +305,13 @@ double RhsFunction<dim>::value(const Point<dim> &p,
 }
 
 enum ActiveFEIndex {
-  sol_in = 0,           // inside
-  sol_intersection = 1, // intersection
-  sol_out = 2           // outside
+  sol_in = 0,            // inside
+  sol_intersection = 1,  // intersection
+  sol_out = 2            // outside
 };
 
-template <int dim> void LaplaceSolver<dim>::distribute_dofs() {
+template <int dim>
+void LaplaceSolver<dim>::distribute_dofs() {
   std::cout << "Distributing degrees of freedom" << std::endl;
 
   for (const auto &cell : dof_handler.active_cell_iterators()) {
@@ -353,7 +351,8 @@ template <int dim> void LaplaceSolver<dim>::distribute_dofs() {
   constraints.close();
 }
 
-template <int dim> void LaplaceSolver<dim>::initialize_matrices() {
+template <int dim>
+void LaplaceSolver<dim>::initialize_matrices() {
   std::cout << "Initializing matrices" << std::endl;
 
   const auto face_has_flux_coupling = [&](const auto &cell,
@@ -417,12 +416,12 @@ void LaplaceSolver<dim>::distribute_penalty_terms(
     const double cell_side_length, const unsigned int reminder) {
   const QGauss<dim - 1> face_quadrature(2 * fe_degree + 1);
   hp::QCollection<dim - 1> q_collection(face_quadrature);
-  hp::FEFaceValues<dim> hp_fe_face0(fe_collection, q_collection,
-                                    update_gradients | update_JxW_values |
-                                        update_normal_vectors);
-  hp::FEFaceValues<dim> hp_fe_face1(fe_collection, q_collection,
-                                    update_gradients | update_JxW_values |
-                                        update_normal_vectors);
+  hp::FEFaceValues<dim> hp_fe_face0(
+      fe_collection, q_collection,
+      update_gradients | update_JxW_values | update_normal_vectors);
+  hp::FEFaceValues<dim> hp_fe_face1(
+      fe_collection, q_collection,
+      update_gradients | update_JxW_values | update_normal_vectors);
   hp_fe_face0.reinit(cell, f);
   // initialize for neighboring cell and the same face f, seen by
   // the neighboring cell
@@ -458,7 +457,7 @@ void LaplaceSolver<dim>::distribute_penalty_terms(
   for (unsigned int q = 0; q < fe_face0.n_quadrature_points; ++q) {
     const Tensor<1, dim> normal = fe_face0.normal_vector(q);
     Assert(std::abs(fe_face0.JxW(q) - fe_face1.JxW(q)) < 1e-15,
-           ExcMessage("Not consistent JxW")); // sanity check.
+           ExcMessage("Not consistent JxW"));  // sanity check.
     const double interface_JxW = fe_face0.JxW(q);
     {
       for (unsigned int i = 0; i < fe_face0.dofs_per_cell; ++i) {
@@ -575,8 +574,7 @@ template <int dim>
 bool LaplaceSolver<dim>::face_has_ghost_penalty(
     const typename Triangulation<dim>::active_cell_iterator &cell,
     const unsigned int face_index) const {
-  if (cell->at_boundary(face_index))
-    return false;
+  if (cell->at_boundary(face_index)) return false;
 
   const NonMatching::LocationToLevelSet cell_location =
       mesh_classifier.location_to_level_set(cell);
@@ -599,8 +597,7 @@ template <int dim>
 bool LaplaceSolver<dim>::face_has_ghost_penalty_outside(
     const typename Triangulation<dim>::active_cell_iterator &cell,
     const unsigned int face_index) const {
-  if (cell->at_boundary(face_index))
-    return false;
+  if (cell->at_boundary(face_index)) return false;
 
   const NonMatching::LocationToLevelSet cell_location =
       mesh_classifier.location_to_level_set(cell);
@@ -619,7 +616,8 @@ bool LaplaceSolver<dim>::face_has_ghost_penalty_outside(
   return false;
 }
 
-template <int dim> void LaplaceSolver<dim>::assemble_system() {
+template <int dim>
+void LaplaceSolver<dim>::assemble_system() {
   std::cout << "Assembling" << std::endl;
 
   const unsigned int n_dofs_per_cell = fe_collection[0].dofs_per_cell;
@@ -698,7 +696,7 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
       for (unsigned int f : cell->face_indices()) {
         if (face_has_ghost_penalty(cell, f)) {
           distribute_penalty_terms(cell, f, ghost_parameter, cell_side_length,
-                                   0); // reminder == 0
+                                   0);  // reminder == 0
         }
       }
     }
@@ -742,7 +740,7 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
       for (unsigned int f : cell->face_indices()) {
         if (face_has_ghost_penalty_outside(cell, f)) {
           distribute_penalty_terms(cell, f, ghost_parameter, cell_side_length,
-                                   1); // reminder == 1
+                                   1);  // reminder == 1
         }
       }
     }
@@ -788,11 +786,11 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
       for (unsigned int f : cell->face_indices()) {
         if (face_has_ghost_penalty(cell, f)) {
           distribute_penalty_terms(cell, f, ghost_parameter, cell_side_length,
-                                   0); // reminder == 0
+                                   0);  // reminder == 0
         }
         if (face_has_ghost_penalty_outside(cell, f)) {
           distribute_penalty_terms(cell, f, ghost_parameter, cell_side_length,
-                                   1); // reminder == 1
+                                   1);  // reminder == 1
         }
       }
 
@@ -898,7 +896,8 @@ template <int dim> void LaplaceSolver<dim>::assemble_system() {
   rhs.compress(VectorOperation::add);
 }
 
-template <int dim> void LaplaceSolver<dim>::solve() {
+template <int dim>
+void LaplaceSolver<dim>::solve() {
   std::cout << "Solving system" << std::endl;
 
   LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
@@ -911,7 +910,8 @@ template <int dim> void LaplaceSolver<dim>::solve() {
   constraints.distribute(solution);
 }
 
-template <int dim> void LaplaceSolver<dim>::output_results() const {
+template <int dim>
+void LaplaceSolver<dim>::output_results() const {
   std::cout << "Writing vtu file" << std::endl;
 
   DataOut<dim> data_out;
@@ -1269,7 +1269,8 @@ double LaplaceSolver<dim>::compute_H1_error_from_inside() const {
   return std::sqrt(error_H1_squared + sqrtL2error);
 }
 
-template <int dim> void LaplaceSolver<dim>::run() {
+template <int dim>
+void LaplaceSolver<dim>::run() {
   ConvergenceTable convergence_table;
   const unsigned int n_refinements = 6;
 
@@ -1310,15 +1311,14 @@ template <int dim> void LaplaceSolver<dim>::run() {
         "L2-Error", ConvergenceTable::reduction_rate_log2);
     convergence_table.evaluate_convergence_rates(
         "H1-Error", ConvergenceTable::reduction_rate_log2);
-
   }
-  
+
   std::string conv_filename = "table_03.txt";
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
-} // namespace Step85
+}  // namespace Step85
 
 int main(int argc, char *argv[]) {
   const int dim = 2;

@@ -22,55 +22,52 @@
 #include <deal.II/base/parsed_function.h>
 #include <deal.II/base/quadrature_lib.h>
 #include <deal.II/base/timer.h>
+#include <deal.II/dofs/dof_handler.h>
+#include <deal.II/dofs/dof_tools.h>
+#include <deal.II/fe/fe_dgq.h>
+#include <deal.II/fe/fe_q.h>
 #include <deal.II/fe/fe_system.h>
+#include <deal.II/fe/mapping_fe_field.h>
+#include <deal.II/grid/filtered_iterator.h>
+#include <deal.II/grid/grid_generator.h>
 #include <deal.II/grid/grid_in.h>
 #include <deal.II/grid/grid_out.h>
+#include <deal.II/grid/grid_tools.h>
+#include <deal.II/grid/grid_tools_cache.h>
+#include <deal.II/grid/tria.h>
+#include <deal.II/lac/affine_constraints.h>
+#include <deal.II/lac/dynamic_sparsity_pattern.h>
+#include <deal.II/lac/full_matrix.h>
 #include <deal.II/lac/linear_operator_tools.h>
+#include <deal.II/lac/precondition.h>
+#include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/solver_gmres.h>
+#include <deal.II/lac/solver_minres.h>
 #include <deal.II/lac/sparse_direct.h>
+#include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/trilinos_linear_operator.h>
 #include <deal.II/lac/trilinos_precondition.h>
 #include <deal.II/lac/trilinos_solver.h>
 #include <deal.II/lac/trilinos_sparse_matrix.h>
 #include <deal.II/lac/trilinos_vector.h>
+#include <deal.II/lac/vector.h>
 #include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/error_estimator.h>
-
-#include <deal.II/dofs/dof_handler.h>
-#include <deal.II/dofs/dof_tools.h>
-
-#include <deal.II/fe/fe_dgq.h>
-#include <deal.II/fe/fe_q.h>
-
-#include <deal.II/fe/mapping_fe_field.h>
-#include <deal.II/grid/filtered_iterator.h>
-#include <deal.II/grid/grid_generator.h>
-#include <deal.II/grid/grid_tools.h>
-#include <deal.II/grid/grid_tools_cache.h>
-#include <deal.II/grid/tria.h>
-
-#include <deal.II/lac/affine_constraints.h>
-#include <deal.II/lac/dynamic_sparsity_pattern.h>
-#include <deal.II/lac/full_matrix.h>
-#include <deal.II/lac/precondition.h>
-#include <deal.II/lac/solver_cg.h>
-#include <deal.II/lac/solver_minres.h>
-#include <deal.II/lac/sparse_matrix.h>
-#include <deal.II/lac/vector.h>
-
-#include "coupling_utilities.h"
-#include <deal.II/numerics/data_out.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
+
 #include <fstream>
 #include <iostream>
 
+#include "coupling_utilities.h"
+
 using namespace dealii;
 
-template <int dim, int spacedim = dim> class PoissonLM {
-public:
+template <int dim, int spacedim = dim>
+class PoissonLM {
+ public:
   class Parameters : public ParameterAcceptor {
-  public:
+   public:
     Parameters();
 
     unsigned int n_refinement_cycles = 6;
@@ -106,7 +103,7 @@ public:
 
   void run();
 
-private:
+ private:
   const Parameters &parameters;
 
   void setup_grids_and_dofs();
@@ -238,11 +235,13 @@ PoissonLM<dim, spacedim>::Parameters::Parameters()
 
 template <int dim, int spacedim>
 PoissonLM<dim, spacedim>::PoissonLM(const Parameters &parameters)
-    : parameters(parameters), space_triangulation(MPI_COMM_WORLD),
+    : parameters(parameters),
+      space_triangulation(MPI_COMM_WORLD),
       mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
-      rhs_function("Right hand side"), solution_function("Solution"),
+      rhs_function("Right hand side"),
+      solution_function("Solution"),
       multiplier_function("Solution multiplier"),
       boundary_condition_function("Boundary condition"),
       embedded_configuration_function("Immersed configuration", spacedim),
@@ -277,13 +276,13 @@ void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
 
     if constexpr (dim == 1 && spacedim == 2) {
       space_triangulation.refine_global(
-          parameters.space_initial_global_refinements); // 4
+          parameters.space_initial_global_refinements);  // 4
       if (parameters.coupling_strategy == "inexact") {
         // Use a level set to generate the actual domain.
         GridGenerator::hyper_cube(embedded_triangulation, 0.,
-                                  1.); // parametric space for the curve
+                                  1.);  // parametric space for the curve
         embedded_triangulation.refine_global(
-            parameters.embedded_initial_global_refinements); // 2
+            parameters.embedded_initial_global_refinements);  // 2
 
         embedded_configuration_fe = std::make_unique<FESystem<dim, spacedim>>(
             FE_Q<dim, spacedim>(
@@ -352,8 +351,8 @@ void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
             << std::endl;
 }
 
-template <int dim, int spacedim> void PoissonLM<dim, spacedim>::adjust_grids() {
-
+template <int dim, int spacedim>
+void PoissonLM<dim, spacedim>::adjust_grids() {
   std::cout << "Adjusting the grids..." << std::endl;
   namespace bgi = boost::geometry::index;
 
@@ -475,7 +474,7 @@ void PoissonLM<dim, spacedim>::setup_space_dofs() {
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
       *space_dh, 0, boundary_condition_function,
-      space_constraints); // Dirichlet on the exterior (fictitious) boundary
+      space_constraints);  // Dirichlet on the exterior (fictitious) boundary
 
   space_constraints.close();
 
@@ -585,9 +584,9 @@ void PoissonLM<dim, spacedim>::assemble_system() {
         for (const unsigned int i : fe_values_gamma.dof_indices())
           for (const unsigned int j : fe_values_gamma.dof_indices())
             cell_mass_matrix(i, j) +=
-                fe_values_gamma.shape_value(i, q_index) * //  q_i(x_q)
-                fe_values_gamma.shape_value(j, q_index) * //  q_j(x_q)
-                fe_values_gamma.JxW(q_index);             // dx
+                fe_values_gamma.shape_value(i, q_index) *  //  q_i(x_q)
+                fe_values_gamma.shape_value(j, q_index) *  //  q_j(x_q)
+                fe_values_gamma.JxW(q_index);              // dx
       }
 
       cell->get_dof_indices(local_dof_gamma_indices);
@@ -615,15 +614,15 @@ void PoissonLM<dim, spacedim>::assemble_system() {
         for (const unsigned int i : fe_values.dof_indices())
           for (const unsigned int j : fe_values.dof_indices())
             cell_matrix(i, j) +=
-                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                 fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                 fe_values.JxW(q_index));           // dx
+                (fe_values.shape_grad(i, q_index) *  // grad phi_i(x_q)
+                 fe_values.shape_grad(j, q_index) *  // grad phi_j(x_q)
+                 fe_values.JxW(q_index));            // dx
         for (const unsigned int i : fe_values.dof_indices())
-          cell_rhs(i) += (fe_values.shape_value(i, q_index) * // phi_i(x_q)
+          cell_rhs(i) += (fe_values.shape_value(i, q_index) *  // phi_i(x_q)
                           /*  forcing_term.value(
                               fe_values.quadrature_point(q_index)) * // f(x_q)*/
                           rhs_function.value(q_points[q_index]) *
-                          fe_values.JxW(q_index)); // dx
+                          fe_values.JxW(q_index));  // dx
       }
 
       cell->get_dof_indices(local_dof_indices);
@@ -665,7 +664,8 @@ void PoissonLM<dim, spacedim>::assemble_system() {
 }
 
 // We solve the resulting system as done in the classical Poisson example.
-template <int dim, int spacedim> void PoissonLM<dim, spacedim>::solve() {
+template <int dim, int spacedim>
+void PoissonLM<dim, spacedim>::solve() {
   // TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
@@ -739,7 +739,7 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
     difference_per_cell.reinit(
         space_triangulation
-            .n_active_cells()); // zero out again to store the H1 error
+            .n_active_cells());  // zero out again to store the H1 error
     VectorTools::integrate_difference(
         *space_dh, solution, solution_function, difference_per_cell,
         QGauss<spacedim>(2 * parameters.fe_space_degree + 1),
@@ -749,8 +749,8 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh->n_dofs() -
-                                            space_constraints.n_constraints());
+    convergence_table.add_value(
+        "dofs", space_dh->n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("dofs_emb", embedded_dh->n_dofs());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
@@ -783,12 +783,13 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
   }
 }
 
-template <int dim, int spacedim> void PoissonLM<dim, spacedim>::run() {
+template <int dim, int spacedim>
+void PoissonLM<dim, spacedim>::run() {
   for (cycle = 0; cycle < parameters.n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     {
-      TimerOutput::Scope timer_section(timer, "Total time cycle " +
-                                                  std::to_string(cycle));
+      TimerOutput::Scope timer_section(
+          timer, "Total time cycle " + std::to_string(cycle));
       setup_grids_and_dofs();
 
       if (parameters.coupling_strategy == "exact") {
@@ -843,10 +844,10 @@ template <int dim, int spacedim> void PoissonLM<dim, spacedim>::run() {
       "L2_multiplier", "dofs_emb", ConvergenceTable::reduction_rate_log2, dim);
   convergence_table.evaluate_convergence_rates(
       "H12_multiplier", "dofs_emb", ConvergenceTable::reduction_rate_log2, dim);
-  
+
   std::string conv_filename = "table_04.txt";
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
 int main(int argc, char **argv) {

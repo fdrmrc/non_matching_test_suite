@@ -97,7 +97,7 @@ class PoissonLM {
     unsigned int embedded_configuration_finite_element_degree = 1;
   };
 
-  PoissonLM(const Parameters &parameters);
+  PoissonLM(const Parameters &parameters, const bool);
 
   void run();
 
@@ -862,7 +862,7 @@ void PoissonLM<dim, spacedim>::run() {
     conv_filename += "7.txt";
 
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
 int main(int argc, char **argv) {

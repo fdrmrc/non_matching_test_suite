@@ -576,7 +576,7 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
 
   std::string conv_filename = "table_08.txt";
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
 int main(int argc, char *argv[]) {

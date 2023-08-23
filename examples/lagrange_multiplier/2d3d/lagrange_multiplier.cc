@@ -65,7 +65,7 @@ static constexpr double Cz = .5;
 using namespace dealii;
 
 template <int dim, int spacedim = dim>
-class PoissonDLM {
+class PoissonLM {
  public:
   class Parameters : public ParameterAcceptor {
    public:
@@ -98,7 +98,7 @@ class PoissonDLM {
     unsigned int fe_embedded_degree = 1;
   };
 
-  PoissonDLM(const Parameters &parameters);
+  PoissonLM(const Parameters &parameters, const bool);
 
   void run();
 
@@ -186,7 +186,7 @@ class PoissonDLM {
 };
 
 template <int dim, int spacedim>
-PoissonDLM<dim, spacedim>::Parameters::Parameters()
+PoissonLM<dim, spacedim>::Parameters::Parameters()
     : ParameterAcceptor("/Distributed Lagrange<" +
                         Utilities::int_to_string(dim) + "," +
                         Utilities::int_to_string(spacedim) + ">/") {
@@ -222,8 +222,8 @@ PoissonDLM<dim, spacedim>::Parameters::Parameters()
 }
 
 template <int dim, int spacedim>
-PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters,
-                                      const bool smoothness_solution)
+PoissonLM<dim, spacedim>::PoissonLM(const Parameters &parameters,
+                                    const bool smoothness_solution)
     : parameters(parameters),
       space_triangulation(MPI_COMM_WORLD),
       mpi_communicator(MPI_COMM_WORLD),
@@ -250,7 +250,7 @@ PoissonDLM<dim, spacedim>::PoissonDLM(const Parameters &parameters,
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
+void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
   if (cycle == 0) {
     GridGenerator::hyper_cube(space_triangulation, -1., 1.);
 
@@ -295,7 +295,7 @@ void PoissonDLM<dim, spacedim>::setup_grids_and_dofs() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::adjust_grids() {
+void PoissonLM<dim, spacedim>::adjust_grids() {
   // Adjust grid diameters to satisfy ratio suggested by the theory.
 
   std::cout << "Adjusting the grids..." << std::endl;
@@ -407,7 +407,7 @@ void PoissonDLM<dim, spacedim>::adjust_grids() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_space_dofs() {
+void PoissonLM<dim, spacedim>::setup_space_dofs() {
   // Setup space DoFs
   space_dh = std::make_unique<DoFHandler<spacedim>>(space_triangulation);
   space_dh->distribute_dofs(*space_fe);
@@ -450,7 +450,7 @@ void PoissonDLM<dim, spacedim>::setup_space_dofs() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
+void PoissonLM<dim, spacedim>::setup_embedded_dofs() {
   embedded_dh =
       std::make_unique<DoFHandler<dim, spacedim>>(embedded_triangulation);
   embedded_dh->distribute_dofs(*embedded_fe);
@@ -468,7 +468,7 @@ void PoissonDLM<dim, spacedim>::setup_embedded_dofs() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::setup_coupling() {
+void PoissonLM<dim, spacedim>::setup_coupling() {
   QGauss<dim> quad(2 * parameters.fe_space_degree + 1);
 
   DynamicSparsityPattern dsp(space_dh->n_dofs(), embedded_dh->n_dofs());
@@ -505,7 +505,7 @@ void PoissonDLM<dim, spacedim>::setup_coupling() {
 }
 
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::assemble_system() {
+void PoissonLM<dim, spacedim>::assemble_system() {
   {
     TimerOutput::Scope timer_section(timer, "Assemble system");
     std::cout << "Assemble system" << std::endl;
@@ -608,7 +608,7 @@ void PoissonDLM<dim, spacedim>::assemble_system() {
 
 // We solve the resulting system as done in the classical Poisson example.
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::solve() {
+void PoissonLM<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
@@ -655,7 +655,7 @@ void PoissonDLM<dim, spacedim>::solve() {
 
 // Finally, we output the solution living in the embedding space
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
+void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
   std::cout << "Output results" << std::endl;
 
   if (cycle < 2) {
@@ -723,7 +723,7 @@ void PoissonDLM<dim, spacedim>::output_results(const unsigned cycle) const {
 // The run() method here differs only in the call to
 // NonMatching::compute_intersection().
 template <int dim, int spacedim>
-void PoissonDLM<dim, spacedim>::run() {
+void PoissonLM<dim, spacedim>::run() {
   for (cycle = 0; cycle < parameters.n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     {
@@ -794,15 +794,15 @@ void PoissonDLM<dim, spacedim>::run() {
     conv_filename += "13.txt";
 
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);
+  convergence_table.write_text(table_file);
 }
 
 int main(int argc, char **argv) {
   try {
     {
         // std::cout << "Solving in 1D/2D" << std::endl;
-        // PoissonDLM<1, 2>::Parameters parameters;
-        // PoissonDLM<1, 2>             problem(parameters);
+        // PoissonLM<1, 2>::Parameters parameters;
+        // PoissonLM<1, 2>             problem(parameters);
         // std::string                  parameter_file;
         // if (argc > 1)
         //   parameter_file = argv[1];
@@ -813,7 +813,7 @@ int main(int argc, char **argv) {
         // "used_parameters.prm"); problem.run();
     } {
       // std::cout << "Solving in 2D/2D" << std::endl;
-      // PoissonDLM<2> problem;
+      // PoissonLM<2> problem;
       // problem.run();
       // // } {
       std::cout << "Solving in 2D/3D" << std::endl;
@@ -829,15 +829,15 @@ int main(int argc, char **argv) {
         parameter_file = "parameters.prm";
       }
 
-      PoissonDLM<2, 3>::Parameters parameters;
-      PoissonDLM<2, 3> problem(parameters, smoothness);
+      PoissonLM<2, 3>::Parameters parameters;
+      PoissonLM<2, 3> problem(parameters, smoothness);
 
       ParameterAcceptor::initialize(parameter_file, "used_parameters.prm");
       problem.run();
     }
     {
       // std::cout << "Solving in 3D/3D" << std::endl;
-      // PoissonDLM<3> problem;
+      // PoissonLM<3> problem;
       // problem.run();
     }
     return 0;

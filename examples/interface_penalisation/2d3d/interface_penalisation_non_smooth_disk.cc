@@ -13,10 +13,6 @@
 //
 // ---------------------------------------------------------------------
 
-#include <deal.II/grid/grid_out.h>
-
-#include <deal.II/lac/linear_operator_tools.h>
-
 #include <deal.II/base/convergence_table.h>
 #include <deal.II/base/function.h>
 #include <deal.II/base/mpi.h>
@@ -25,32 +21,31 @@
 #include <deal.II/base/timer.h>
 #include <deal.II/dofs/dof_handler.h>
 #include <deal.II/dofs/dof_tools.h>
-#include <deal.II/lac/generic_linear_algebra.h>
-#include <deal.II/numerics/error_estimator.h>
-
 #include <deal.II/fe/fe_q.h>
-
 #include <deal.II/grid/filtered_iterator.h>
 #include <deal.II/grid/grid_generator.h>
+#include <deal.II/grid/grid_out.h>
 #include <deal.II/grid/grid_tools.h>
 #include <deal.II/grid/grid_tools_cache.h>
 #include <deal.II/grid/tria.h>
-
-#include "coupling_utilities.h"
 #include <deal.II/lac/affine_constraints.h>
 #include <deal.II/lac/dynamic_sparsity_pattern.h>
 #include <deal.II/lac/full_matrix.h>
+#include <deal.II/lac/generic_linear_algebra.h>
+#include <deal.II/lac/linear_operator_tools.h>
 #include <deal.II/lac/precondition.h>
 #include <deal.II/lac/solver_cg.h>
 #include <deal.II/lac/sparse_matrix.h>
 #include <deal.II/lac/vector.h>
-
 #include <deal.II/numerics/data_out.h>
+#include <deal.II/numerics/error_estimator.h>
 #include <deal.II/numerics/matrix_tools.h>
 #include <deal.II/numerics/vector_tools.h>
 
 #include <fstream>
 #include <iostream>
+
+#include "coupling_utilities.h"
 
 using namespace dealii;
 
@@ -60,8 +55,9 @@ const double Cy = .5;
 const double Cz = .5;
 // Functors-like classes to describe boundary values, right hand side,
 // analytical solution, if any.
-template <int dim> class RightHandSide : public Function<dim> {
-public:
+template <int dim>
+class RightHandSide : public Function<dim> {
+ public:
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
 };
@@ -74,21 +70,21 @@ double RightHandSide<3>::value(const Point<3> &p,
   return 0.;
 }
 
-template <int dim> class Solution : public Function<dim> {
-public:
+template <int dim>
+class Solution : public Function<dim> {
+ public:
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
 
-  virtual Tensor<1, dim>
-  gradient(const Point<dim> &p,
-           const unsigned int component = 0) const override;
+  virtual Tensor<1, dim> gradient(
+      const Point<dim> &p, const unsigned int component = 0) const override;
 };
 
 template <>
 double Solution<3>::value(const Point<3> &p,
                           const unsigned int component) const {
   (void)component;
-  const Point<3> xc{Cx, Cy, Cz}; // center of the sphere
+  const Point<3> xc{Cx, Cy, Cz};  // center of the sphere
   const double r = (p - xc).norm();
   return r <= R ? 1. / R : 1. / r;
 }
@@ -98,7 +94,7 @@ Tensor<1, 3> Solution<3>::gradient(const Point<3> &p,
                                    const unsigned int component) const {
   (void)component;
   Tensor<1, 3> grad;
-  const Point<3> xc{Cx, Cy, Cz}; // center of the sphere
+  const Point<3> xc{Cx, Cy, Cz};  // center of the sphere
   const double r = (p - xc).norm();
 
   grad[0] = (r <= R) ? 0. : -(p[0] - Cx) / (std::pow(r * r, 1.5));
@@ -107,12 +103,13 @@ Tensor<1, 3> Solution<3>::gradient(const Point<3> &p,
   return grad;
 }
 
-template <int dim, int spacedim> class PoissonNitscheInterface {
-public:
+template <int dim, int spacedim>
+class PoissonNitscheInterface {
+ public:
   PoissonNitscheInterface();
   void run();
 
-private:
+ private:
   void generate_grids();
 
   void adjust_grids();
@@ -179,8 +176,10 @@ private:
 
 template <int dim, int spacedim>
 PoissonNitscheInterface<dim, spacedim>::PoissonNitscheInterface()
-    : space_triangulation(MPI_COMM_WORLD), space_fe(1),
-      space_dh(space_triangulation), mpi_communicator(MPI_COMM_WORLD),
+    : space_triangulation(MPI_COMM_WORLD),
+      space_fe(1),
+      space_dh(space_triangulation),
+      mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
       timer(std::cout, TimerOutput::every_call_and_summary,
@@ -331,7 +330,7 @@ void PoissonNitscheInterface<dim, spacedim>::setup_system() {
   // This is where we apply essential boundary conditions.
   VectorTools::interpolate_boundary_values(
       space_dh, 0, Solution<spacedim>(),
-      space_constraints); // zero Dirichlet on the boundary
+      space_constraints);  // zero Dirichlet on the boundary
 
   space_constraints.close();
   DynamicSparsityPattern dsp(space_dh.n_dofs());
@@ -376,15 +375,15 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
         for (const unsigned int i : fe_values.dof_indices())
           for (const unsigned int j : fe_values.dof_indices())
             cell_matrix(i, j) +=
-                (fe_values.shape_grad(i, q_index) * // grad phi_i(x_q)
-                 fe_values.shape_grad(j, q_index) * // grad phi_j(x_q)
-                 fe_values.JxW(q_index));           // dx
+                (fe_values.shape_grad(i, q_index) *  // grad phi_i(x_q)
+                 fe_values.shape_grad(j, q_index) *  // grad phi_j(x_q)
+                 fe_values.JxW(q_index));            // dx
         for (const unsigned int i : fe_values.dof_indices())
           cell_rhs(i) +=
-              (fe_values.shape_value(i, q_index) * // phi_i(x_q)
-                                                   /*  forcing_term.value(
-                                                       fe_values.quadrature_point(q_index)) * // f(x_q)*/
-               rhs.value(q_points[q_index]) * fe_values.JxW(q_index)); // dx
+              (fe_values.shape_value(i, q_index) *  // phi_i(x_q)
+                                                    /*  forcing_term.value(
+                                                        fe_values.quadrature_point(q_index)) * // f(x_q)*/
+               rhs.value(q_points[q_index]) * fe_values.JxW(q_index));  // dx
       }
 
       cell->get_dof_indices(local_dof_indices);
@@ -462,7 +461,7 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
 
     difference_per_cell.reinit(
         space_triangulation
-            .n_active_cells()); // zero out again to store the H1 error
+            .n_active_cells());  // zero out again to store the H1 error
     VectorTools::integrate_difference(
         space_dh, solution, Solution<spacedim>(), difference_per_cell,
         QGauss<spacedim>(2 * space_fe.degree + 1), VectorTools::H1_norm);
@@ -471,8 +470,8 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
 
     convergence_table.add_value("cycle", cycle);
     convergence_table.add_value("cells", space_triangulation.n_active_cells());
-    convergence_table.add_value("dofs", space_dh.n_dofs() -
-                                            space_constraints.n_constraints());
+    convergence_table.add_value(
+        "dofs", space_dh.n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
   }
@@ -485,14 +484,13 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   generate_grids();
   for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
-    if (cycle == 0u)
-      adjust_grids();
+    if (cycle == 0u) adjust_grids();
     // Compute all the things we need to assemble the Nitsche's
     // contributions, namely the two cached triangulations and a degree to
     // integrate over the intersections.
     {
-      TimerOutput::Scope timer_section(timer, "Total time cycle " +
-                                                  std::to_string(cycle));
+      TimerOutput::Scope timer_section(
+          timer, "Total time cycle " + std::to_string(cycle));
       std::cout << "Start collecting quadratures" << std::endl;
       {
         TimerOutput::Scope timer_section(
@@ -532,7 +530,8 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       "H1", ConvergenceTable::reduction_rate_log2);
   std::string conv_filename = "table_14.txt";
   std::ofstream table_file(conv_filename);
-  convergence_table.write_text(conv_filename);}
+  convergence_table.write_text(table_file);
+}
 
 int main(int argc, char *argv[]) {
   try {
