@@ -183,7 +183,7 @@ void LaplaceSolver<dim>::setup_discrete_level_set(const unsigned int cycle) {
     // The grid will be read from an external .vtk file
     GridIn<1, 2> grid_in;
     grid_in.attach_triangulation(embedded_tria);
-    std::ifstream input_file("../../grids/flower_interface.vtk");
+    std::ifstream input_file(SOURCE_DIR "../../grids/flower_interface.vtk");
     grid_in.read_vtk(input_file);
   } else {
     embedded_tria.refine_global(1);

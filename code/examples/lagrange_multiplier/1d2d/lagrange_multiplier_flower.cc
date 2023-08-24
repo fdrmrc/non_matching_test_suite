@@ -291,7 +291,7 @@ void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
       } else {
         GridIn<1, 2> grid_in;
         grid_in.attach_triangulation(embedded_triangulation);
-        std::ifstream input_file("../../grids/flower_interface.vtk");
+        std::ifstream input_file(SOURCE_DIR "../../grids/flower_interface.vtk");
         grid_in.read_vtk(input_file);
 
         embedded_mapping = std::make_unique<MappingQ<dim, spacedim>>(1);

@@ -216,7 +216,7 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids(
     if (cycle == 0) {
       GridIn<1, 2> grid_in;
       grid_in.attach_triangulation(embedded_triangulation);
-      std::ifstream input_file("../../grids/flower_interface.vtk");
+      std::ifstream input_file(SOURCE_DIR "../../grids/flower_interface.vtk");
       Assert(dim == 1 && spacedim == 2, ExcInternalError());
       grid_in.read_vtk(input_file);
     }
