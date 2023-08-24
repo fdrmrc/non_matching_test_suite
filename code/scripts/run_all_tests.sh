@@ -1,11 +1,12 @@
 #!/bin/bash
 
-cd ../build/examples/
-export PARAM_DIR=../../data/
-export BINARY_DIR=../../code/build/examples/
-export BINARY_POSTFIX=""
+cd ./results
+export PARAM_DIR=../data/
+export BINARY_DIR=../code/build/examples/
 
-#Runs everything in Release mode.
+# Runs everything in Release mode. 
+# If you want to use Debug mode, change the postfix to ".g"
+export BINARY_POSTFIX=""
 
 #Tables 1,2,3
 echo Table 1
