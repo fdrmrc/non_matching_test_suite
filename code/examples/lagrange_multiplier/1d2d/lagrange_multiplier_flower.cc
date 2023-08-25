@@ -192,6 +192,8 @@ class PoissonLM {
   mutable DataOut<spacedim> data_out;
 
   unsigned int cycle;
+
+  mutable unsigned int iter;
 };
 
 template <int dim, int spacedim>
@@ -266,6 +268,8 @@ PoissonLM<dim, spacedim>::PoissonLM(const Parameters &parameters)
         ParameterAcceptor::prm.set("Function expression",
                                    "R*cos(2*pi*x)+Cx; R*sin(2*pi*x)+Cy");
       });
+
+  iter = numbers::invalid_unsigned_int;
 }
 
 template <int dim, int spacedim>
@@ -291,7 +295,8 @@ void PoissonLM<dim, spacedim>::setup_grids_and_dofs() {
       } else {
         GridIn<1, 2> grid_in;
         grid_in.attach_triangulation(embedded_triangulation);
-        std::ifstream input_file(SOURCE_DIR "../../grids/flower_interface.vtk");
+        std::ifstream input_file(
+            "/root/capsule/code/grids/flower_interface.vtk");
         grid_in.read_vtk(input_file);
 
         embedded_mapping = std::make_unique<MappingQ<dim, spacedim>>(1);
@@ -704,6 +709,7 @@ void PoissonLM<dim, spacedim>::solve() {
   std::cout << "Solved with Schur in : " << reduction_control.last_step()
             << "iterations." << std::endl;
 
+  iter = reduction_control.last_step();
   std::cout << "Solved with CG in : " << reduction_control_K.last_step()
             << "iterations." << std::endl;
 
@@ -720,13 +726,13 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
   TimerOutput::Scope timer_section(timer, "Output results");
   std::cout << "Output results" << std::endl;
   data_out.clear();
-  if (cycle < 3) {
-    std::ofstream data_out_file("space_solution.vtu");
-    data_out.attach_dof_handler(*space_dh);
-    data_out.add_data_vector(solution, "solution");
-    data_out.build_patches();
-    data_out.write_vtu(data_out_file);
-  }
+  // if (cycle < 3) {
+  //   std::ofstream data_out_file("space_solution.vtu");
+  //   data_out.attach_dof_handler(*space_dh);
+  //   data_out.add_data_vector(solution, "solution");
+  //   data_out.build_patches();
+  //   data_out.write_vtu(data_out_file);
+  // }
 
   {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
@@ -780,6 +786,9 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
     std::cout << "H^1/2 error multiplier: " << std::scientific;
     std::cout << H12error_multiplier << std::endl;
     convergence_table.add_value("H12_multiplier", H12error_multiplier);
+
+    convergence_table.add_value("Iter", iter);
+    iter = 0;
   }
 }
 
@@ -836,6 +845,7 @@ void PoissonLM<dim, spacedim>::run() {
   convergence_table.set_scientific("H1", true);
   convergence_table.set_scientific("L2_multiplier", true);
   convergence_table.set_scientific("H12_multiplier", true);
+  convergence_table.set_scientific("Iter", false);
   convergence_table.evaluate_convergence_rates(
       "L2", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(

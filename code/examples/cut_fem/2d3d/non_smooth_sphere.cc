@@ -153,6 +153,8 @@ class LaplaceSolver {
   const unsigned int this_mpi_process;
 
   mutable TimerOutput timer;
+  mutable ConvergenceTable convergence_table;
+  mutable unsigned int iter;
 };
 
 template <int dim>
@@ -174,6 +176,7 @@ LaplaceSolver<dim>::LaplaceSolver()
   fe_collection.push_back(fe_in);
   fe_collection.push_back(fe_surf);
   fe_collection.push_back(fe_out);
+  iter = numbers::invalid_unsigned_int;
 }
 
 template <int dim>
@@ -203,10 +206,16 @@ void LaplaceSolver<dim>::setup_discrete_level_set(const unsigned int cycle) {
   GridTools::Cache<2, 3> cache(embedded_tria);
   auto tree = cache.get_cell_bounding_boxes_rtree();
 
+  // Triangulation<2, 3> tria_out;
+  // Move to CGAL surfaces
   NonMatchingUtilities::CGALMesh surface_mesh;
   dealii::CGALWrappers::dealii_tria_to_cgal_surface_mesh(embedded_tria,
                                                          surface_mesh);
+  // CGAL::Polygon_mesh_processing::stitch_borders(surface_mesh);
   CGAL::Polygon_mesh_processing::triangulate_faces(surface_mesh);
+  // // Now back to deal.II
+  // dealii::CGALWrappers::cgal_surface_mesh_to_dealii_triangulation(surface_mesh,
+  //                                                                 tria_out);
 
   typedef CGAL::Polyhedral_mesh_domain_3<NonMatchingUtilities::CGALMesh,
                                          NonMatchingUtilities::CGALKernel>
@@ -238,9 +247,10 @@ double AnalyticalSolution<dim>::value(const Point<dim> &point,
                                       const unsigned int component) const {
   AssertIndexRange(component, this->n_components);
   (void)component;
-  const Point<3> xc{Cx, Cy, Cz};  // center of the sphere
-  const double r = (point - xc).norm();
-  return r <= R ? 1. / R : 1. / r;
+
+  return std::sin(2. * numbers::PI * point[0]) *
+         std::sin(2. * numbers::PI * point[1]) *
+         std::sin(2. * numbers::PI * point[2]);
 }
 
 template <int dim>
@@ -248,15 +258,14 @@ Tensor<1, dim> AnalyticalSolution<dim>::gradient(
     const Point<dim> &point, const unsigned int component) const {
   AssertIndexRange(component, this->n_components);
   (void)component;
-
-  const Point<3> xc{Cx, Cy, Cz};
-  const double r = (point - xc).norm();
-
   Tensor<1, dim> grad;
+  grad[0] = 2. * M_PI * std::cos(2. * M_PI * point[0]) *
+            std::sin(2. * M_PI * point[1]) * std::sin(2. * M_PI * point[2]);
+  grad[1] = 2. * M_PI * std::sin(2. * M_PI * point[0]) *
+            std::cos(2. * M_PI * point[1]) * std::sin(2. * M_PI * point[2]);
+  grad[2] = 2. * M_PI * std::sin(2. * M_PI * point[0]) *
+            std::sin(2. * M_PI * point[1]) * std::cos(2. * M_PI * point[2]);
 
-  grad[0] = (r <= R) ? 0. : -(point[0] - Cx) / (std::pow(r * r, 1.5));
-  grad[1] = (r <= R) ? 0. : -(point[1] - Cy) / (std::pow(r * r, 1.5));
-  grad[2] = (r <= R) ? 0. : -(point[2] - Cz) / (std::pow(r * r, 1.5));
   return grad;
 }
 
@@ -297,9 +306,9 @@ class RhsFunction : public Function<dim> {
 template <int dim>
 double RhsFunction<dim>::value(const Point<dim> &p,
                                const unsigned int component) const {
-  (void)p;
   (void)component;
-  return 0.;
+  return 12. * numbers::PI * numbers::PI * std::sin(2. * numbers::PI * p[0]) *
+         std::sin(2. * numbers::PI * p[1]) * std::sin(2. * numbers::PI * p[2]);
 }
 
 enum ActiveFEIndex {
@@ -379,9 +388,6 @@ void LaplaceSolver<dim>::initialize_matrices() {
       face_coupling, numbers::invalid_subdomain_id, face_has_flux_coupling);
   sparsity_pattern.copy_from(dsp);
 
-  // stiffness_matrix.reinit(sparsity_pattern);
-  // solution.reinit(dof_handler.n_dofs());
-  // rhs.reinit(dof_handler.n_dofs());
   const std::vector<IndexSet> locally_owned_dofs_per_proc =
       DoFTools::locally_owned_dofs_per_subdomain(dof_handler);
   const IndexSet locally_owned_dofs =
@@ -630,8 +636,6 @@ void LaplaceSolver<dim>::assemble_system() {
   Vector<double> local_rhs(n_dofs_per_cell);
   std::vector<types::global_dof_index> local_dof_indices(n_dofs_per_cell);
 
-  // std::cout << "nDoFs per intersected cell: "
-  //           << fe_collection[1].dofs_per_cell << std::endl;
   const unsigned int n_dofs_per_intersected_cell =
       fe_collection[1].dofs_per_cell;
   FullMatrix<double> local_stiffness_surf(n_dofs_per_intersected_cell,
@@ -903,38 +907,41 @@ void LaplaceSolver<dim>::solve() {
   solver.solve(stiffness_matrix, solution, rhs, preconditioner);
   std::cout << "Solved in " << solver_control.last_step() << " iterations."
             << std::endl;
+  iter = solver_control.last_step();
   constraints.distribute(solution);
 }
 
 template <int dim>
 void LaplaceSolver<dim>::output_results() const {
-  std::cout << "Writing vtu file" << std::endl;
+  // std::cout << "Writing vtu file" << std::endl;
 
-  DataOut<dim> data_out;
-  data_out.add_data_vector(dof_handler, solution, "solution_sphere_3D");
-  data_out.add_data_vector(level_set_dof_handler, level_set, "level_set");
+  // DataOut<dim> data_out;
+  // data_out.add_data_vector(dof_handler, solution, "solution_sphere_3D");
+  // data_out.add_data_vector(level_set_dof_handler, level_set, "level_set");
 
-  data_out.set_cell_selection(
-      [this](const typename Triangulation<dim>::cell_iterator &cell) {
-        return cell->is_active() &&
-               mesh_classifier.location_to_level_set(cell) !=
-                   NonMatching::LocationToLevelSet::outside;
-      });
+  // data_out.set_cell_selection(
+  //     [this](const typename Triangulation<dim>::cell_iterator &cell) {
+  //       return cell->is_active() &&
+  //              mesh_classifier.location_to_level_set(cell) !=
+  //                  NonMatching::LocationToLevelSet::outside;
+  //     });
 
-  data_out.build_patches();
-  std::ofstream output_inside_inter("cutFEM_inside_intersected.vtu");
-  data_out.write_vtu(output_inside_inter);
+  // data_out.build_patches();
+  // std::ofstream output_inside_inter("cutFEM_inside_intersected.vtu");
+  // data_out.write_vtu(output_inside_inter);
 
-  data_out.set_cell_selection(
-      [this](const typename Triangulation<dim>::cell_iterator &cell) {
-        return cell->is_active() &&
-               mesh_classifier.location_to_level_set(cell) ==
-                   NonMatching::LocationToLevelSet::outside;
-      });
+  // data_out.set_cell_selection(
+  //     [this](const typename Triangulation<dim>::cell_iterator &cell) {
+  //       return cell->is_active() &&
+  //              mesh_classifier.location_to_level_set(cell) ==
+  //                  NonMatching::LocationToLevelSet::outside;
+  //     });
 
-  data_out.build_patches();
-  std::ofstream output_outside("cutFEM_outside.vtu");
-  data_out.write_vtu(output_outside);
+  // data_out.build_patches();
+  // std::ofstream output_outside("cutFEM_outside.vtu");
+  // data_out.write_vtu(output_outside);
+  convergence_table.add_value("Iter.", iter);
+  iter = 0;
 }
 
 template <int dim>
@@ -1090,30 +1097,6 @@ double LaplaceSolver<dim>::compute_L2_error_from_outside() const {
             std::pow(error_at_point, 2) * outside_fe_values->JxW(q);
       }
     }
-    /*
-            const
-       std_cxx17::optional<NonMatching::FEImmersedSurfaceValues<dim>>
-              &surface_fe_values =
-       non_matching_fe_values.get_surface_fe_values(); if
-       (surface_fe_values)
-              {
-                std::vector<double> solution_values(
-                  surface_fe_values->n_quadrature_points);
-                (*surface_fe_values)[exterior].get_function_values(solution,
-                                                                   solution_values);
-
-                for (const unsigned int q :
-                     surface_fe_values->quadrature_point_indices())
-                  {
-                    const Point<dim> &point =
-                      surface_fe_values->quadrature_point(q);
-                    const double error_at_point =
-                      solution_values[q] - analytical_solution.value(point);
-                    error_L2_squared +=
-                      std::pow(error_at_point, 2) *
-       surface_fe_values->JxW(q);
-                  }
-              }*/
   }
 
   return std::sqrt(error_L2_squared);
@@ -1267,7 +1250,6 @@ double LaplaceSolver<dim>::compute_H1_error_from_outside() const {
 
 template <int dim>
 void LaplaceSolver<dim>::run() {
-  ConvergenceTable convergence_table;
   const unsigned int n_refinements = 5;
 
   make_grid();
@@ -1292,7 +1274,7 @@ void LaplaceSolver<dim>::run() {
       solve();
       // if (cycle == 3)
     }
-    output_results();
+
     const double error_L2_inside = compute_L2_error_from_inside();
     const double error_L2_outside = compute_L2_error_from_outside();
     const double error_L2 = std::sqrt(error_L2_outside * error_L2_outside +
@@ -1311,16 +1293,18 @@ void LaplaceSolver<dim>::run() {
     convergence_table.add_value("dofs", dof_handler.n_dofs());
     convergence_table.add_value("L2-Error", error_L2);
     convergence_table.add_value("H1-Error", error_H1);
+    output_results();
 
     convergence_table.set_scientific("L2-Error", true);
     convergence_table.set_scientific("H1-Error", true);
+    convergence_table.set_scientific("Iter.", false);
     convergence_table.evaluate_convergence_rates(
         "L2-Error", "dofs", ConvergenceTable::reduction_rate_log2, dim);
     convergence_table.evaluate_convergence_rates(
         "H1-Error", "dofs", ConvergenceTable::reduction_rate_log2, dim);
   }
 
-  std::string conv_filename = "table_15.txt";
+  std::string conv_filename = "table_12.txt";
   std::ofstream table_file(conv_filename);
   convergence_table.write_text(table_file);
 }
@@ -1329,6 +1313,7 @@ void LaplaceSolver<dim>::run() {
 
 int main(int argc, char *argv[]) {
   const int dim = 3;
+  // Step85::create_cgal_mesh_domain();
   dealii::Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
   Step85::LaplaceSolver<dim> laplace_solver;
   laplace_solver.run();

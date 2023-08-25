@@ -153,6 +153,7 @@ class LaplaceSolver {
   const unsigned int this_mpi_process;
 
   mutable TimerOutput timer;
+  mutable unsigned int iter;
 };
 
 template <int dim>
@@ -174,6 +175,7 @@ LaplaceSolver<dim>::LaplaceSolver()
   fe_collection.push_back(fe_in);
   fe_collection.push_back(fe_surf);
   fe_collection.push_back(fe_out);
+  iter =numbers::invalid_unsigned_int;
 }
 
 template <int dim>
@@ -904,38 +906,41 @@ void LaplaceSolver<dim>::solve() {
   solver.solve(stiffness_matrix, solution, rhs, preconditioner);
   std::cout << "Solved in " << solver_control.last_step() << " iterations."
             << std::endl;
+            iter = solver_control.last_step();
   constraints.distribute(solution);
 }
 
 template <int dim>
 void LaplaceSolver<dim>::output_results() const {
-  std::cout << "Writing vtu file" << std::endl;
+  // std::cout << "Writing vtu file" << std::endl;
 
-  DataOut<dim> data_out;
-  data_out.add_data_vector(dof_handler, solution, "solution_sphere_3D");
-  data_out.add_data_vector(level_set_dof_handler, level_set, "level_set");
+  // DataOut<dim> data_out;
+  // data_out.add_data_vector(dof_handler, solution, "solution_sphere_3D");
+  // data_out.add_data_vector(level_set_dof_handler, level_set, "level_set");
 
-  data_out.set_cell_selection(
-      [this](const typename Triangulation<dim>::cell_iterator &cell) {
-        return cell->is_active() &&
-               mesh_classifier.location_to_level_set(cell) !=
-                   NonMatching::LocationToLevelSet::outside;
-      });
+  // data_out.set_cell_selection(
+  //     [this](const typename Triangulation<dim>::cell_iterator &cell) {
+  //       return cell->is_active() &&
+  //              mesh_classifier.location_to_level_set(cell) !=
+  //                  NonMatching::LocationToLevelSet::outside;
+  //     });
 
-  data_out.build_patches();
-  std::ofstream output_inside_inter("cutFEM_inside_intersected.vtu");
-  data_out.write_vtu(output_inside_inter);
+  // data_out.build_patches();
+  // std::ofstream output_inside_inter("cutFEM_inside_intersected.vtu");
+  // data_out.write_vtu(output_inside_inter);
 
-  data_out.set_cell_selection(
-      [this](const typename Triangulation<dim>::cell_iterator &cell) {
-        return cell->is_active() &&
-               mesh_classifier.location_to_level_set(cell) ==
-                   NonMatching::LocationToLevelSet::outside;
-      });
+  // data_out.set_cell_selection(
+  //     [this](const typename Triangulation<dim>::cell_iterator &cell) {
+  //       return cell->is_active() &&
+  //              mesh_classifier.location_to_level_set(cell) ==
+  //                  NonMatching::LocationToLevelSet::outside;
+  //     });
 
-  data_out.build_patches();
-  std::ofstream output_outside("cutFEM_outside.vtu");
-  data_out.write_vtu(output_outside);
+  // data_out.build_patches();
+  // std::ofstream output_outside("cutFEM_outside.vtu");
+  // data_out.write_vtu(output_outside);
+  convergence_table.add_value("Iter.", iter);
+  iter = 0;
 }
 
 template <int dim>
@@ -1269,7 +1274,7 @@ void LaplaceSolver<dim>::run() {
       solve();
       // if (cycle == 3)
     }
-    if (cycle <= 2) output_results();
+
     const double error_L2_inside = compute_L2_error_from_inside();
     const double error_L2_outside = compute_L2_error_from_outside();
     const double error_L2 = std::sqrt(error_L2_outside * error_L2_outside +
@@ -1288,9 +1293,11 @@ void LaplaceSolver<dim>::run() {
     convergence_table.add_value("dofs", dof_handler.n_dofs());
     convergence_table.add_value("L2-Error", error_L2);
     convergence_table.add_value("H1-Error", error_H1);
-
+     output_results();
+    
     convergence_table.set_scientific("L2-Error", true);
     convergence_table.set_scientific("H1-Error", true);
+    convergence_table.set_scientific("Iter.", false);
     convergence_table.evaluate_convergence_rates(
         "L2-Error", "dofs", ConvergenceTable::reduction_rate_log2, dim);
     convergence_table.evaluate_convergence_rates(

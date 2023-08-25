@@ -191,6 +191,8 @@ class PoissonNitscheInterface {
   double penalty = 10.0;
 
   unsigned int n_refinement_cycles = 5;  // 6
+
+  mutable unsigned int iter;
 };
 
 template <int dim, int spacedim>
@@ -201,7 +203,9 @@ PoissonNitscheInterface<dim, spacedim>::PoissonNitscheInterface()
       mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
-      timer(std::cout, TimerOutput::summary, TimerOutput::cpu_and_wall_times) {}
+      timer(std::cout, TimerOutput::summary, TimerOutput::cpu_and_wall_times) {
+  iter = numbers::invalid_unsigned_int;
+}
 
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::generate_grids(
@@ -464,6 +468,7 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
 
   std::cout << "Solver converged in: " << solver_control.last_step()
             << " iterations" << std::endl;
+  iter = solver_control.last_step();
   space_constraints.distribute(solution);
 }
 
@@ -474,16 +479,16 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
     const unsigned cycle) const {
   std::cout << "Output results" << std::endl;
   TimerOutput::Scope timer_section(timer, "Output results");
-  data_out.clear();
-  if (cycle < 3) {
-    data_out.attach_dof_handler(space_dh);
-    data_out.add_data_vector(solution, "solution");
-    data_out.build_patches();
-    std::ofstream output("solution_nitsche" + std::to_string(dim) +
-                         std::to_string(spacedim) + std::to_string(cycle) +
-                         ".vtu");
-    data_out.write_vtu(output);
-  }
+  // data_out.clear();
+  // if (cycle < 3) {
+  //   data_out.attach_dof_handler(space_dh);
+  //   data_out.add_data_vector(solution, "solution");
+  //   data_out.build_patches();
+  //   std::ofstream output("solution_nitsche" + std::to_string(dim) +
+  //                        std::to_string(spacedim) + std::to_string(cycle) +
+  //                        ".vtu");
+  //   data_out.write_vtu(output);
+  // }
   {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
     VectorTools::integrate_difference(
@@ -507,16 +512,18 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
         "dofs", space_dh.n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
+    convergence_table.add_value("Iter.", iter);
+    iter = 0;
   }
 
-  {
-    if (cycle == 3) {
-      std::ofstream output_test_space("space_grid_cycle3.vtk");
-      GridOut().write_vtk(space_triangulation, output_test_space);
-      std::ofstream output_test_embedded("embedded_grid_cycle3.vtk");
-      GridOut().write_vtk(embedded_triangulation, output_test_embedded);
-    }
-  }
+  // {
+  //   if (cycle == 3) {
+  //     std::ofstream output_test_space("space_grid_cycle3.vtk");
+  //     GridOut().write_vtk(space_triangulation, output_test_space);
+  //     std::ofstream output_test_embedded("embedded_grid_cycle3.vtk");
+  //     GridOut().write_vtk(embedded_triangulation, output_test_embedded);
+  //   }
+  // }
 }
 
 // The run() method here differs only in the call to
@@ -568,6 +575,7 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   convergence_table.set_precision("H1", 3);
   convergence_table.set_scientific("L2", true);
   convergence_table.set_scientific("H1", true);
+  convergence_table.set_scientific("Iter.", false);
   convergence_table.evaluate_convergence_rates(
       "L2", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(

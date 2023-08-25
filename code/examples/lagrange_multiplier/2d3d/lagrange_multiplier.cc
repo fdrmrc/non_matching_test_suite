@@ -183,6 +183,8 @@ class PoissonLM {
   mutable DataOut<spacedim> data_out;
 
   unsigned int cycle;
+
+  mutable unsigned int iter;
 };
 
 template <int dim, int spacedim>
@@ -247,6 +249,7 @@ PoissonLM<dim, spacedim>::PoissonLM(const Parameters &parameters,
   boundary_condition_function.declare_parameters_call_back.connect(
       []() -> void { ParameterAcceptor::prm.set("Function expression", "0"); });
   smoothness = smoothness_solution;
+  iter = numbers::invalid_unsigned_int;
 }
 
 template <int dim, int spacedim>
@@ -643,6 +646,8 @@ void PoissonLM<dim, spacedim>::solve() {
   std::cout << "Solved with Schur in : " << reduction_control.last_step()
             << "iterations." << std::endl;
 
+  iter = reduction_control.last_step();
+
   std::cout << "Solved with CG in : " << reduction_control_K.last_step()
             << "iterations." << std::endl;
 
@@ -658,19 +663,19 @@ template <int dim, int spacedim>
 void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
   std::cout << "Output results" << std::endl;
 
-  if (cycle < 2) {
-    data_out.clear();
-    std::ofstream data_out_file("space_solution.vtu");
-    data_out.attach_dof_handler(*space_dh);
-    data_out.add_data_vector(solution, "solution");
-    data_out.build_patches();
-    data_out.write_vtu(data_out_file);
+  // if (cycle < 2) {
+  //   data_out.clear();
+  //   std::ofstream data_out_file("space_solution.vtu");
+  //   data_out.attach_dof_handler(*space_dh);
+  //   data_out.add_data_vector(solution, "solution");
+  //   data_out.build_patches();
+  //   data_out.write_vtu(data_out_file);
 
-    std::ofstream output_test_space("space_grid.vtk");
-    GridOut().write_vtk(space_triangulation, output_test_space);
-    std::ofstream output_test_embedded("embedded_grid.vtk");
-    GridOut().write_vtk(embedded_triangulation, output_test_embedded);
-  }
+  //   std::ofstream output_test_space("space_grid.vtk");
+  //   GridOut().write_vtk(space_triangulation, output_test_space);
+  //   std::ofstream output_test_embedded("embedded_grid.vtk");
+  //   GridOut().write_vtk(embedded_triangulation, output_test_embedded);
+  // }
 
   {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
@@ -717,6 +722,8 @@ void PoissonLM<dim, spacedim>::output_results(const unsigned cycle) const {
       std::cout << H12error_multiplier << std::endl;
       convergence_table.add_value("H12_multiplier", H12error_multiplier);
     }
+    convergence_table.add_value("Iter.", iter);
+    iter = 0;
   }
 }
 
@@ -783,10 +790,8 @@ void PoissonLM<dim, spacedim>::run() {
       "H1", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(
       "H12_multiplier", "dofs_emb", ConvergenceTable::reduction_rate_log2, dim);
-  // convergence_table.set_precision("L2_multiplier", 3);
-  // convergence_table.set_scientific("L2_multiplier", true);
-  // convergence_table.evaluate_convergence_rates(
-  //   "L2_multiplier", ConvergenceTable::reduction_rate_log2);
+  convergence_table.set_scientific("Iter", false);
+
   std::string conv_filename = "table_";
   if (smoothness)
     conv_filename += "10.txt";
@@ -800,22 +805,6 @@ void PoissonLM<dim, spacedim>::run() {
 int main(int argc, char **argv) {
   try {
     {
-        // std::cout << "Solving in 1D/2D" << std::endl;
-        // PoissonLM<1, 2>::Parameters parameters;
-        // PoissonLM<1, 2>             problem(parameters);
-        // std::string                  parameter_file;
-        // if (argc > 1)
-        //   parameter_file = argv[1];
-        // else
-        //   parameter_file = "parameters.prm";
-
-        // ParameterAcceptor::initialize(parameter_file,
-        // "used_parameters.prm"); problem.run();
-    } {
-      // std::cout << "Solving in 2D/2D" << std::endl;
-      // PoissonLM<2> problem;
-      // problem.run();
-      // // } {
       std::cout << "Solving in 2D/3D" << std::endl;
       Utilities::MPI::MPI_InitFinalize mpi_initialization(argc, argv, 1);
       bool smoothness = false;

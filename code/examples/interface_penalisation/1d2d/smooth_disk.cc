@@ -53,21 +53,29 @@
 
 using namespace dealii;
 
-static constexpr double R = 0.3;
-static constexpr double Cx = .5;
-static constexpr double Cy = .5;
-
+// Functors-like classes to describe boundary values, right hand side,
+// analytical solution, if any.
 template <int dim>
 class RightHandSide : public Function<dim> {
  public:
   virtual double value(const Point<dim> &p,
                        const unsigned int component = 0) const override;
 };
+
 template <>
-double RightHandSide<2>::value(const Point<2> &p,
+double RightHandSide<3>::value(const Point<3> &p,
                                const unsigned int component) const {
   (void)p;
   (void)component;
+  return 0.;
+}
+
+template <>
+double RightHandSide<2>::value(const Point<2> &p,
+                               const unsigned int component) const {
+  // (void)p;
+  (void)component;
+  // return 0.;
   return 8. * numbers::PI * numbers::PI *
          (std::sin(2. * numbers::PI * p[0]) *
           std::sin(2. * numbers::PI * p[1]));
@@ -183,6 +191,8 @@ class PoissonNitscheInterface {
   double penalty = 10.0;
 
   unsigned int n_refinement_cycles = 5;  // 6
+
+  mutable unsigned int iter;
 };
 
 template <int dim, int spacedim>
@@ -193,7 +203,9 @@ PoissonNitscheInterface<dim, spacedim>::PoissonNitscheInterface()
       mpi_communicator(MPI_COMM_WORLD),
       n_mpi_processes(Utilities::MPI::n_mpi_processes(mpi_communicator)),
       this_mpi_process(Utilities::MPI::this_mpi_process(mpi_communicator)),
-      timer(std::cout, TimerOutput::summary, TimerOutput::cpu_and_wall_times) {}
+      timer(std::cout, TimerOutput::summary, TimerOutput::cpu_and_wall_times) {
+  iter = numbers::invalid_unsigned_int;
+}
 
 template <int dim, int spacedim>
 void PoissonNitscheInterface<dim, spacedim>::generate_grids(
@@ -206,11 +218,11 @@ void PoissonNitscheInterface<dim, spacedim>::generate_grids(
 
   if constexpr (dim == 1 && spacedim == 2) {
     if (cycle == 0) {
-      // Generate the embeddede grid using GridGenerator
-      GridGenerator::hyper_sphere(embedded_triangulation, {Cx, Cy}, R);
-      embedded_triangulation.refine_global(3);  // 2
-      // Embedded mapping is the standard one
-      embedded_mapping = std::make_unique<MappingQ<dim, spacedim>>(1);
+      GridIn<1, 2> grid_in;
+      grid_in.attach_triangulation(embedded_triangulation);
+      std::ifstream input_file("/root/capsule/code/grids/flower_interface.vtk");
+      Assert(dim == 1 && spacedim == 2, ExcInternalError());
+      grid_in.read_vtk(input_file);
     }
 
     embedded_mapping = std::make_unique<MappingQ<dim, spacedim>>(1);
@@ -303,7 +315,7 @@ void PoissonNitscheInterface<dim, spacedim>::adjust_grids() {
   refine();
 
   // Pre refine the space grid according to the delta refinement
-  const unsigned int n_space_cycles = 2;
+  const unsigned int n_space_cycles = 4;  // before it was 2.
   for (unsigned int i = 0; i < n_space_cycles; ++i) {
     const auto &tree =
         space_cache->get_locally_owned_cell_bounding_boxes_rtree();
@@ -420,7 +432,6 @@ void PoissonNitscheInterface<dim, spacedim>::assemble_system() {
     embedded_dh.distribute_dofs(embedded_fe);
     std::cout << "Embedded DoFs: " << embedded_dh.n_dofs() << std::endl;
 
-    // Add Nitsche's contribution to the system matrix.
     NonMatching::assemble_nitsche_with_exact_intersections<spacedim, dim,
                                                            spacedim>(
         space_dh, cells_and_quads, system_matrix, space_constraints,
@@ -449,9 +460,6 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
   TimerOutput::Scope timer_section(timer, "Solve system");
   std::cout << "Solve system" << std::endl;
 
-  // PreconditionJacobi<SparseMatrix<double>> preconditioner;
-  // preconditioner.initialize(system_matrix);
-
   LinearAlgebraTrilinos::MPI::PreconditionAMG preconditioner;
   preconditioner.initialize(system_matrix);
   SolverControl solver_control(solution.size(), 1e-8);
@@ -460,6 +468,7 @@ void PoissonNitscheInterface<dim, spacedim>::solve() {
 
   std::cout << "Solver converged in: " << solver_control.last_step()
             << " iterations" << std::endl;
+  iter = solver_control.last_step();
   space_constraints.distribute(solution);
 }
 
@@ -470,15 +479,16 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
     const unsigned cycle) const {
   std::cout << "Output results" << std::endl;
   TimerOutput::Scope timer_section(timer, "Output results");
-  // std::cout << "Output results" << std::endl;
-  data_out.clear();
-  data_out.attach_dof_handler(space_dh);
-  data_out.add_data_vector(solution, "solution");
-  data_out.build_patches();
-  std::ofstream output("solution_nitsche" + std::to_string(dim) +
-                       std::to_string(spacedim) + std::to_string(cycle) +
-                       ".vtu");
-  data_out.write_vtu(output);
+  // data_out.clear();
+  // if (cycle < 3) {
+  //   data_out.attach_dof_handler(space_dh);
+  //   data_out.add_data_vector(solution, "solution");
+  //   data_out.build_patches();
+  //   std::ofstream output("solution_nitsche" + std::to_string(dim) +
+  //                        std::to_string(spacedim) + std::to_string(cycle) +
+  //                        ".vtu");
+  //   data_out.write_vtu(output);
+  // }
   {
     Vector<double> difference_per_cell(space_triangulation.n_active_cells());
     VectorTools::integrate_difference(
@@ -502,16 +512,18 @@ void PoissonNitscheInterface<dim, spacedim>::output_results(
         "dofs", space_dh.n_dofs() - space_constraints.n_constraints());
     convergence_table.add_value("L2", L2_error);
     convergence_table.add_value("H1", H1_error);
+    convergence_table.add_value("Iter.", iter);
+    iter = 0;
   }
 
-  {
-    if (cycle == 3) {
-      std::ofstream output_test_space("space_grid_cycle3.vtk");
-      GridOut().write_vtk(space_triangulation, output_test_space);
-      std::ofstream output_test_embedded("embedded_grid_cycle3.vtk");
-      GridOut().write_vtk(embedded_triangulation, output_test_embedded);
-    }
-  }
+  // {
+  //   if (cycle == 3) {
+  //     std::ofstream output_test_space("space_grid_cycle3.vtk");
+  //     GridOut().write_vtk(space_triangulation, output_test_space);
+  //     std::ofstream output_test_embedded("embedded_grid_cycle3.vtk");
+  //     GridOut().write_vtk(embedded_triangulation, output_test_embedded);
+  //   }
+  // }
 }
 
 // The run() method here differs only in the call to
@@ -521,7 +533,9 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   for (unsigned int cycle = 0; cycle < n_refinement_cycles; ++cycle) {
     std::cout << "Cycle: " << cycle << std::endl;
     generate_grids(cycle);
-    if (cycle == 0) adjust_grids();
+    if (spacedim == 2 && cycle == 0) adjust_grids();
+    // else if (spacedim == 3/* && cycle == 0*/)
+    //   adjust_grids();
 
     // Compute all the things we need to assemble the Nitsche's
     // contributions, namely the two cached triangulations and a degree to
@@ -547,6 +561,7 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
       solve();
     }
 
+    // error_table.error_from_exact(space_dh, solution, exact_solution);
     output_results(cycle);
 
     if (cycle < n_refinement_cycles - 1) {
@@ -560,12 +575,12 @@ void PoissonNitscheInterface<dim, spacedim>::run() {
   convergence_table.set_precision("H1", 3);
   convergence_table.set_scientific("L2", true);
   convergence_table.set_scientific("H1", true);
+  convergence_table.set_scientific("Iter.", false);
   convergence_table.evaluate_convergence_rates(
       "L2", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
   convergence_table.evaluate_convergence_rates(
       "H1", "dofs", ConvergenceTable::reduction_rate_log2, spacedim);
-
-  std::string conv_filename = "table_02.txt";
+  std::string conv_filename = "table_05.txt";
   std::ofstream table_file(conv_filename);
   convergence_table.write_text(table_file);
 }
